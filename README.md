@@ -1,0 +1,330 @@
+# PlayWrightIUT
+
+A Cloudflare Worker that automates the export of ICS calendar files from the ADE (Application de Gestion des Emplois du Temps) system for IUT Béthune groups. This project uses Playwright to interact with the ADE web interface, caches the data in Cloudflare D1 and KV, and serves the calendars via a REST API.
+
+## Features
+
+- **Automated ADE Scraping**: Uses Playwright to log into the ADE system and export ICS files for specific groups.
+- **Caching**: Stores parsed events in Cloudflare D1 database and uses KV for cache timestamps and rate limiting.
+- **Rate Limiting**: Prevents abuse with IP-based rate limiting.
+- **Static Landing Page**: Serves a simple animated landing page at the root URL.
+- **Monorepo Structure**: Organized with Yarn workspaces for easy development and deployment.
+
+## Architecture
+
+The project is structured as a Yarn monorepo with the following components:
+
+- `apps/cf-playwrightiut-worker/`: The main Cloudflare Worker application.
+- `tests/`: Playwright tests for validating the ADE automation logic.
+
+The worker handles two endpoints:
+- `/`: Serves a static HTML landing page with IUT branding.
+- `/iutrt-bethune?group=<GROUP>`: Returns an ICS calendar file for the specified group.
+
+Data flow:
+1. Check rate limit and cache validity.
+2. If cache is stale, use Playwright to fetch fresh ICS from ADE.
+3. Parse ICS and store events in D1 database.
+4. Generate and return ICS from cached data.
+
+## Setup
+
+### Prerequisites
+
+- Node.js (v18 or later)
+- Yarn
+- Cloudflare account with Workers, D1, and KV enabled
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/sctg-development/PlayWrightIUT
+   cd PlayWrightIUT
+   ```
+
+2. Install dependencies:
+   ```bash
+   yarn install
+   ```
+
+3. Set up environment variables:
+   Create a `.env` file in `at root` with:
+   ```
+   USERNAME=your-ade-username
+   PASSWORD=your-ade-password
+   DOMAIN=your-domain.com
+   ```
+
+4. Configure Cloudflare resources:
+   - Create a D1 database named `iuticsdb`
+   - Create a KV namespace named `CACHE`
+   - Set up rate limiting (see wrangler.jsonc for configuration)
+
+## Deployment
+
+### Recommended Method: Automated Deployment with GitHub Actions (Best for Beginners)
+
+This is the easiest way to deploy your own worker. You don't need to install anything on your computer except Git.
+
+#### Step 1: Create a Free Cloudflare Account
+
+1. Go to [https://dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up)
+2. Create a free account (you only need an email address)
+3. Verify your email address
+4. Log in to your Cloudflare dashboard
+
+#### Step 2: Create Required Cloudflare Resources
+
+**Create a D1 Database:**
+
+1. In your Cloudflare dashboard, go to **Workers & Pages** → **D1**
+2. Click **"Create database"**
+3. Name it exactly: `iuticsdb`
+4. Click **"Create"**
+5. Once created, click on your database
+6. Go to the **"Console"** tab
+7. Copy and paste the SQL schema from `apps/cf-playwrightiut-worker/schema.sql`:
+   ```sql
+   CREATE TABLE IF NOT EXISTS events (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       grp TEXT NOT NULL,
+       uid TEXT NOT NULL,
+       start TEXT NOT NULL,
+       end TEXT NOT NULL,
+       summary TEXT,
+       description TEXT
+   );
+   CREATE INDEX IF NOT EXISTS idx_grp ON events(grp);
+   ```
+8. Click **"Execute"**
+
+**Create a KV Namespace:**
+
+1. In your Cloudflare dashboard, go to **Workers & Pages** → **KV**
+2. Click **"Create a namespace"**
+3. Name it: `iutics_cache` (the name doesn't have to be exact, but it's easier to remember)
+4. Click **"Add"**
+5. **Important**: Copy the **Namespace ID** (you'll need it later)
+
+**Get Your Cloudflare API Token:**
+
+1. Go to **My Profile** (top right) → **API Tokens**
+2. Click **"Create Token"**
+3. Use the **"Edit Cloudflare Workers"** template
+4. Under **Account Resources**, select your account
+5. Under **Zone Resources**, select **All zones** (or specific zones if you prefer)
+6. Click **"Continue to summary"**
+7. Click **"Create Token"**
+8. **Important**: Copy the token immediately (you won't be able to see it again!)
+
+**Get Your Cloudflare Account ID:**
+
+1. Go to **Workers & Pages** → **Overview**
+2. On the right side, you'll see **"Account ID"**
+3. Click to copy it
+
+#### Step 3: Fork or Clone This Repository to Your GitHub Account
+
+**Option A: Fork (Easier - Keep connection to original repository):**
+
+1. Go to [https://github.com/sctg-development/PlayWrightIUT](https://github.com/sctg-development/PlayWrightIUT)
+2. Click the **"Fork"** button (top right)
+3. Click **"Create fork"**
+4. You now have your own copy of the repository!
+
+**Option B: Create a New Repository from Template:**
+
+1. Download this repository as a ZIP file or clone it:
+   ```bash
+   git clone https://github.com/sctg-development/PlayWrightIUT
+   cd PlayWrightIUT
+   ```
+2. Create a new repository on GitHub:
+   - Go to [https://github.com/new](https://github.com/new)
+   - Name it (e.g., `my-iut-calendar`)
+   - Make it **Private** (to keep your credentials safe)
+   - Click **"Create repository"**
+3. Push your code to the new repository:
+   ```bash
+   git remote remove origin
+   git remote add origin https://github.com/YOUR-USERNAME/my-iut-calendar.git
+   git push -u origin main
+   ```
+
+#### Step 4: Configure GitHub Secrets
+
+GitHub Secrets are a secure way to store sensitive information like passwords and API keys.
+
+1. Go to your GitHub repository
+2. Click **"Settings"** (top menu)
+3. In the left sidebar, click **"Secrets and variables"** → **"Actions"**
+4. Click **"New repository secret"** for each of the following:
+
+   **Required Secrets:**
+   
+   | Secret Name | Value | Description |
+   |-------------|-------|-------------|
+   | `CLOUDFLARE_API_TOKEN` | The token you created in Step 2 | Allows GitHub to deploy to Cloudflare |
+   | `CLOUDFLARE_ACCOUNT_ID` | Your account ID from Step 2 | Your Cloudflare account identifier |
+   | `USERNAME` | Your ADE username | Your university login |
+   | `PASSWORD` | Your ADE password | Your university password |
+   | `DOMAIN_NAME` | Your custom domain (optional) | e.g., `calendar.example.com` (leave empty if you don't have one) |
+
+5. Click **"Add secret"** after entering each one
+
+#### Step 5: Update Configuration Files
+
+**Update wrangler.jsonc with your resource IDs:**
+
+1. In your GitHub repository, go to the file: `apps/cf-playwrightiut-worker/wrangler.jsonc`
+2. Click the **pencil icon** to edit
+3. Find the `kv_namespaces` section and replace the `id` with your KV Namespace ID:
+   ```jsonc
+   "kv_namespaces": [
+     {
+       "binding": "CACHE",
+       "id": "YOUR_KV_NAMESPACE_ID_HERE"  // Replace this
+     }
+   ]
+   ```
+4. Find the `d1_databases` section - the database name should already be `iuticsdb`
+5. Click **"Commit changes"** at the bottom
+
+#### Step 6: Enable GitHub Actions
+
+1. In your GitHub repository, click the **"Actions"** tab
+2. If you see a message saying "Workflows aren't being run on this forked repository", click **"I understand my workflows, go ahead and enable them"**
+3. You should see a workflow called **"CloudflareWorkerDeploy"**
+
+#### Step 7: Trigger Your First Deployment
+
+**Option A: Push a change (easiest):**
+1. Make any small edit to a file in `apps/cf-playwrightiut-worker/` (e.g., edit a comment in `src/index.ts`)
+2. Commit and push the change
+3. GitHub Actions will automatically deploy
+
+**Option B: Manual trigger:**
+1. Go to **"Actions"** tab
+2. Click on **"CloudflareWorkerDeploy"** workflow
+3. Click **"Run workflow"** button
+4. Click the green **"Run workflow"** button
+
+#### Step 8: Monitor the Deployment
+
+1. Go to the **"Actions"** tab
+2. Click on the running workflow
+3. Watch the deployment progress
+4. If everything is green ✓, your worker is deployed!
+5. If there's a red ✗, click on the failed step to see what went wrong
+
+#### Step 9: Find Your Worker URL
+
+1. Go to your Cloudflare dashboard
+2. Navigate to **Workers & Pages**
+3. Click on your worker (it should be named `cf-playwrightiut-worker` or similar)
+4. You'll see your worker URL, something like: `https://cf-playwrightiut-worker.YOUR-USERNAME.workers.dev`
+
+#### Step 10: Test Your Deployment
+
+Open your browser and go to:
+```
+https://your-worker-url.workers.dev/
+```
+
+You should see the landing page!
+
+To get a calendar, try:
+```
+https://your-worker-url.workers.dev/iutrt-bethune?group=RT1_A2
+```
+
+Replace `RT1_A2` with your actual group name.
+
+### Common Issues and Solutions
+
+**Problem: "Error: No namespace with ID..."**
+- Solution: Make sure you updated the `wrangler.jsonc` file with your actual KV Namespace ID
+
+**Problem: "Error: Authentication error"**
+- Solution: Double-check your `CLOUDFLARE_API_TOKEN` secret in GitHub
+
+**Problem: "Rate limit exceeded"**
+- Solution: The worker has rate limiting enabled. Wait 10 seconds and try again.
+
+**Problem: GitHub Actions not running**
+- Solution: Make sure you enabled Actions in Step 6
+
+**Problem: Worker deploys but shows errors when accessing**
+- Solution: Check that your D1 database is created and the schema is loaded
+
+### Alternative: Manual Deployment with Wrangler CLI
+
+If you prefer to deploy from your computer:
+
+1. Install Wrangler CLI:
+   ```bash
+   npm install -g wrangler
+   ```
+
+2. Authenticate with Cloudflare:
+   ```bash
+   wrangler auth login
+   ```
+
+3. Deploy the worker:
+   ```bash
+   cd apps/cf-playwrightiut-worker
+   wrangler deploy
+   ```
+
+4. Set up the D1 database schema:
+   ```bash
+   wrangler d1 execute iuticsdb --file=schema.sql
+   ```
+
+## Usage
+
+### API Endpoints
+
+- **GET /**: Returns the landing page.
+- **GET /iutrt-bethune?groupe=<GROUP>**: Returns the ICS calendar for the specified group.
+
+Example:
+```
+https://your-worker-url/iutrt-bethune?groupe=RT1_A2
+```
+
+### Testing
+
+Run the Playwright tests:
+```bash
+yarn test
+```
+
+## Development
+
+### Running Locally
+
+1. Start the worker locally:
+   ```bash
+   cd apps/cf-playwrightiut-worker
+   wrangler dev
+   ```
+
+2. The worker will be available at `http://localhost:8787`
+
+### Sensitive Data Handling
+
+The project includes a script for managing sensitive data:
+```bash
+./_sensitive_datas/store_sensitive_datas
+```
+
+This script helps store credentials securely for deployment.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
+Copyright (c) 2025 Ronan Le Meillat - SCTG Development

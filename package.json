@@ -1,0 +1,11 @@
+{
+  "name": "PlayWrightIUT",
+  "packageManager": "yarn@4.9.2",
+  "workspaces": [
+    "apps/*"
+  ],
+  "devDependencies": {
+    "@playwright/test": "^1.55.1",
+    "@types/node": "^24.6.2"
+  }
+}

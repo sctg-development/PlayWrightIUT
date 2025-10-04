@@ -1,0 +1,23 @@
+{
+	"name": "cf-playwrightiut-worker",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "cp ../../.env .dev.vars && wrangler deploy",
+		"dev": "cp ../../.env .dev.vars && wrangler dev",
+		"start": "cp ../../.env .dev.vars && wrangler dev",
+		"test": "cp ../../.env .dev.vars && vitest",
+		"cf-typegen": "cp ../../.env .dev.vars && wrangler types"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.9.10",
+		"typescript": "^5.9.3",
+		"vitest": "~3.2.4",
+		"wrangler": "^4.42.0"
+	},
+	"dependencies": {
+		"@cloudflare/playwright": "^1.0.0",
+		"@types/ical": "^0.8.3",
+		"ical": "^0.8.0"
+	}
+}
