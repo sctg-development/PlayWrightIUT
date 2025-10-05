@@ -11,6 +11,7 @@ A Cloudflare Worker that automates the export of ICS calendar files from the ADE
 - **Caching**: Stores parsed events in Cloudflare D1 database and uses KV for cache timestamps and rate limiting.
 - **Rate Limiting**: Prevents abuse with IP-based rate limiting.
 - **Static Landing Page**: Serves a simple animated landing page at the root URL.
+- **QR Code Calendar Access**: Provides QR codes on the home page for direct calendar subscription, generated with [custom QR code styling](https://qr.mcfly-parapente.com/) ([source](https://github.com/sctg-development/custom-qr-code-styling)).
 - **Monorepo Structure**: Organized with Yarn workspaces for easy development and deployment.
 
 ## Screenshot  
