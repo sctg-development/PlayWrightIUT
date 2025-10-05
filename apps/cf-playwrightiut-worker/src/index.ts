@@ -228,7 +228,7 @@ async function getCalendarICS(page: any, username: string, password: string, gro
 	await page.locator('button').first().click();
 
 	// Wait for new navigation after click
-	await page.waitForURL('https://ade-consult.univ-artois.fr/direct/myplanning.jsp*');
+	await page.waitForURL('https://ade-consult.univ-artois.fr/direct/myplanning.jsp*', { timeout: 10000 });
 	await page.waitForLoadState('domcontentloaded');
 	// Wait for GWT scripts to load and execute
 	await page.waitForLoadState('networkidle');
