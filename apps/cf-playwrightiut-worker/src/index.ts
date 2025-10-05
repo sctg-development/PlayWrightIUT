@@ -199,6 +199,25 @@ async function generateICSFromDB(db: D1Database, group: string): Promise<string>
 }
 
 /**
+ * Checks if an IP address is a development/localhost address
+ * @param ip - The IP address to check
+ * @returns true if the IP is a development address (127.0.0.0/8 or ::1)
+ */
+function isDevelopmentIP(ip: string): boolean {
+	// Check for IPv4 localhost (127.0.0.0/8)
+	if (ip.startsWith('127.')) {
+		return true;
+	}
+
+	// Check for IPv6 localhost (::1)
+	if (ip === '::1') {
+		return true;
+	}
+
+	return false;
+}
+
+/**
  * Checks if a group has any events stored in the database
  * @param db - The D1 database instance
  * @param group - The group identifier to check
@@ -296,10 +315,14 @@ export default {
 		}
 
 		const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-		const rateLimitResult = await env.RATELIMITER.limit({ key: clientIP });
 
-		if (!rateLimitResult.success) {
-			return new Response('Rate limit exceeded. Please wait before retrying.', { status: 429 });
+		// Skip rate limiting for development IPs (localhost)
+		if (!isDevelopmentIP(clientIP)) {
+			const rateLimitResult = await env.RATELIMITER.limit({ key: clientIP });
+
+			if (!rateLimitResult.success) {
+				return new Response('Rate limit exceeded. Please wait before retrying.', { status: 429 });
+			}
 		}
 
 		const group = url.searchParams.get('group');
