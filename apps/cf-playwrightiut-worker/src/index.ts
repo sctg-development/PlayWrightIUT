@@ -46,6 +46,7 @@ interface Env {
 	USERNAME: string;
 	PASSWORD: string;
 	RATELIMITER: any;
+	ALLOWED_GROUPS: string; // Allowed groups separated by |
 }
 
 /**
@@ -211,6 +212,13 @@ export default {
 			if (!group) {
 				return new Response('Missing required parameter: group', { status: 400 });
 			}
+
+			// Validate group is in allowed list
+			const allowedGroups = env.ALLOWED_GROUPS.split('|');
+			if (!allowedGroups.includes(group)) {
+				return new Response(`Group '${group}' is not allowed.`, { status: 400 });
+			}
+
 			const html = await generateScreenshotsPage(env.CACHE, group);
 			return new Response(html, { headers: { 'Content-Type': 'text/html' } });
 		}
@@ -234,6 +242,12 @@ export default {
 
 		if (!group) {
 			return new Response('Missing required parameter: group', { status: 400 });
+		}
+
+		// Validate group is in allowed list
+		const allowedGroups = env.ALLOWED_GROUPS.split('|');
+		if (!allowedGroups.includes(group)) {
+			return new Response(`Group '${group}' is not allowed.`, { status: 400 });
 		}
 
 		const user = group; // cache by group

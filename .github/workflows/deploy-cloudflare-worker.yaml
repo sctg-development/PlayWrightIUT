@@ -61,6 +61,7 @@ jobs:
             echo "USERNAME=${{ secrets.USERNAME }}" >> .env
             echo "PASSWORD=${{ secrets.PASSWORD }}" >> .env
             echo "DOMAIN_NAME=${{ secrets.DOMAIN_NAME }}" >> .env
+            echo "ALLOWED_GROUPS"=${{ secrets.ALLOWED_GROUPS }} >> .env
 
         - name: Replace "// vars.*" in wrangler.jsonc with a json string
           run: |
@@ -69,7 +70,7 @@ jobs:
             cp wrangler.jsonc wrangler.jsonc.bak
             set -a && source .env && set +a 
             cat .env
-            cat wrangler.jsonc.bak | sed 's|// "vars".*.|,"vars": {  "USERNAME": "'"${USERNAME}"'", "PASSWORD": "'"${PASSWORD}"'" }|' > wrangler.jsonc.2
+            cat wrangler.jsonc.bak | sed 's|// "vars".*.|,"vars": {  "USERNAME": "'"${USERNAME}"'", "PASSWORD": "'"${PASSWORD}"'", "ALLOWED_GROUPS": "'"${ALLOWED_GROUPS}"'" }|' > wrangler.jsonc.2
             cat wrangler.jsonc.2 | sed 's|// "routes".*.|,"routes": [{ "pattern": "'"${DOMAIN_NAME}"'", "custom_domain": true }]|'  > wrangler.jsonc
             cat wrangler.jsonc
         - name: Deploy
@@ -82,7 +83,9 @@ jobs:
                 USERNAME
                 PASSWORD
                 DOMAIN_NAME
+                ALLOWED_GROUPS
           env:
             USERNAME: ${{ secrets.USERNAME }}
             PASSWORD: ${{ secrets.PASSWORD }}
             DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+            ALLOWED_GROUPS: ${{ secrets.ALLOWED_GROUPS }}

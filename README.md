@@ -112,6 +112,7 @@ The application implements a sophisticated caching strategy to minimize costs as
    USERNAME=your-ade-username
    PASSWORD=your-ade-password
    DOMAIN=your-domain.com
+   ALLOWED_GROUPS="RT1_A1|RT1_A2|RT1_B1|RT1_B2"
    ```
 
 4. Configure Cloudflare resources:
@@ -228,6 +229,7 @@ GitHub Secrets are a secure way to store sensitive information like passwords an
    | `USERNAME` | Your ADE username | Your university login |
    | `PASSWORD` | Your ADE password | Your university password |
    | `DOMAIN_NAME` | Your custom domain (optional) | e.g., `calendar.example.com` (leave empty if you don't have one) |
+   | `ALLOWED_GROUPS` | The groups you want to allow, separated by `|` | e.g., `RT1_A1|RT1_A2|RT1_B1|RT1_B2` |
 
 5. Click **"Add secret"** after entering each one
 
