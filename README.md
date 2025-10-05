@@ -1,5 +1,5 @@
-![](https://tokei.rs/b1/github/sctg-development/PlayWrightIUT?type=TypeScript&category=code)
-![](https://tokei.rs/b1/github/sctg-development/PlayWrightIUT?type=TypeScript&category=comments)  
+![](https://tokei.rs/b1/github/sctg-development/PlayWrightIUT?type=TypeScript,python&category=code)
+![](https://tokei.rs/b1/github/sctg-development/PlayWrightIUT?type=TypeScript,python&category=comments)
 
 # PlayWrightIUT
 
