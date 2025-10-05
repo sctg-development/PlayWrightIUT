@@ -376,12 +376,78 @@ yarn test
 
 ### Sensitive Data Handling
 
-The project includes a script for managing sensitive data:
+The project includes two scripts for securely managing sensitive data backups:
+
+#### `store_sensitive_datas` - Create Encrypted Backup
+
+This script creates an encrypted backup of sensitive configuration files:
+
 ```bash
 ./_sensitive_datas/store_sensitive_datas
 ```
 
-This script helps store credentials securely for deployment.
+**Functionality:**
+- Compresses selected files using tar.xz for efficient storage
+- Encrypts the archive using AES-256-CBC with PBKDF2 key derivation
+- Generates a SHA256 integrity hash for verification
+- Stores the encrypted backup as `_sensitive_datas.tar.xz.enc`
+
+**Security Level:**
+- **Encryption:** AES-256-CBC (Advanced Encryption Standard with 256-bit key in Cipher Block Chaining mode)
+- **Key Derivation:** PBKDF2 (Password-Based Key Derivation Function 2) for secure key generation from passphrase
+- **Integrity:** SHA256 hash verification to detect tampering or corruption
+- **Compression:** XZ compression reduces file size while maintaining security
+
+**Choosing Files to Backup:**
+The script uses a `FILES_TO_BACKUP` array that you can customize. Consider including:
+- Environment variable files (`.env`, `.env.local`)
+- Configuration files with secrets (`wrangler.toml`, `config.json`)
+- Private keys or certificates
+- Database credentials
+- API keys and tokens
+
+**Example Configuration:**
+```bash
+# In store_sensitive_datas script
+FILES_TO_BACKUP=(
+    ".env"
+    ".env.local"
+    "apps/cf-playwrightiut-worker/wrangler.toml"
+    "config/secrets.json"
+)
+```
+
+#### `restore_sensitive_datas` - Restore from Encrypted Backup
+
+This script decrypts and restores files from the encrypted backup:
+
+```bash
+./_sensitive_datas/restore_sensitive_datas
+```
+
+**Functionality:**
+- Decrypts the `_sensitive_datas.tar.xz.enc` archive using the same AES-256-CBC encryption
+- Verifies integrity using the stored SHA256 hash before extraction
+- Extracts files to their original locations
+- Provides clear error messages if decryption fails or integrity check fails
+
+**Security Features:**
+- **Verification:** SHA256 hash check ensures backup integrity before restoration
+- **Safe Decryption:** Uses the same secure parameters as encryption
+- **Error Handling:** Fails safely if passphrase is incorrect or file is corrupted
+
+**Important Notes:**
+- Both scripts require the `CRYPTOKEN` environment variable (your encryption passphrase)
+- The `PROJECT_ROOT` environment variable should point to the project directory
+- Keep your encryption passphrase secure and separate from the backup files
+- Test restoration on a copy of your data before relying on backups in production
+
+**Best Practices:**
+1. Store the encryption passphrase securely (password manager, separate from backups)
+2. Test backup and restore procedures regularly
+3. Include only necessary sensitive files in `FILES_TO_BACKUP`
+4. Keep multiple backup versions for redundancy
+5. Document your backup procedures for team members
 
 ## License
 
