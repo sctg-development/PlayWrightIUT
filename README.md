@@ -1,3 +1,6 @@
+![](https://tokei.rs/b1/github/sctg-development/PlayWrightIUT?type=TypeScript&category=code)
+![](https://tokei.rs/b1/github/sctg-development/PlayWrightIUT?type=TypeScript&category=comments)  
+
 # PlayWrightIUT
 
 A Cloudflare Worker that automates the export of ICS calendar files from the ADE (Application de Gestion des Emplois du Temps) system for IUT Béthune groups. This project uses Playwright to interact with the ADE web interface, caches the data in Cloudflare D1 and KV, and serves the calendars via a REST API.
