@@ -34,7 +34,7 @@
 			"name": "RATELIMITER",
 			"namespace_id": "1001",
 			"simple": {
-				"limit": 1,
+				"limit": 5,
 				"period": 60
 			}
 		}
