@@ -25,6 +25,7 @@ import ical from 'ical';
 import renderHome from './home';
 import { getCalendarICS } from './ade-scraper';
 import { generateScreenshotsPage } from './screenshots';
+import { generateQRCodePage } from './qrcode';
 import { parseAndStoreICS, generateICSFromDB } from './ics-handler';
 import {
 	android_chrome_192x192_png,
@@ -220,6 +221,17 @@ export default {
 			}
 
 			const html = await generateScreenshotsPage(env.CACHE, group);
+			return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+		}
+
+		// QR code route
+		if (url.pathname === '/qrcode') {
+			const group = url.searchParams.get('group');
+			if (!group) {
+				return new Response('Missing required parameter: group', { status: 400 });
+			}
+
+			const html = generateQRCodePage(group);
 			return new Response(html, { headers: { 'Content-Type': 'text/html' } });
 		}
 

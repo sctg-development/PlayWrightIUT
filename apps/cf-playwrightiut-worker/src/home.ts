@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+import { QRCode_RT1_A1, QRCode_RT1_A2, QRCode_RT1_B1, QRCode_RT1_B2 } from './qrcodes/qrcodes';
+
 /**
  * Renders the homepage HTML.
  * @param statsHtml - Prebuilt HTML fragment containing stats to be interpolated into the page
@@ -73,6 +75,34 @@ export function renderHome(statsHtml: string): string {
             font-size: 9px;
             margin: 20px 0 0 0;
         }
+        .qr-codes {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .qr-codes .qr-code {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .qr-codes .qr-code svg {
+            width: 120px;
+            height: 120px;
+        }
+        .qr-codes .qr-code p {
+            margin: 5px 0 0 0;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        @media (min-width: 400px) {
+            .qr-codes {
+                flex-direction: row;
+                justify-content: center;
+                gap: 20px;
+            }
+        }
         a {
             color: white;
             text-decoration: none;
@@ -83,6 +113,24 @@ export function renderHome(statsHtml: string): string {
     <div id="content">
         <p class="main-text">IUT <span class="plus">+</span> Béthune</p>
         <p class="main-text">Réseaux et Télécoms</p>
+        <div class="qr-codes">
+            <div class="qr-code">
+                <a href="/qrcode?group=RT1_A1">${QRCode_RT1_A1}</a>
+                <p>RT1 A1</p>
+            </div>
+            <div class="qr-code">
+                <a href="/qrcode?group=RT1_A2">${QRCode_RT1_A2}</a>
+                <p>RT1 A2</p>
+            </div>
+            <div class="qr-code">
+                <a href="/qrcode?group=RT1_B1">${QRCode_RT1_B1}</a>
+                <p>RT1 B1</p>
+            </div>
+            <div class="qr-code">
+                <a href="/qrcode?group=RT1_B2">${QRCode_RT1_B2}</a>
+                <p>RT1 B2</p>
+            </div>
+        </div>
         <div class="stats">${statsHtml}</div>
         <p class="footer"><a href="https://github.com/sctg-development/PlayWrightIUT">©2025 Ronan Le Meillat - SCTG Development</a></p>
     </div>
