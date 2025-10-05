@@ -61,7 +61,7 @@ jobs:
             echo "USERNAME=${{ secrets.USERNAME }}" >> .env
             echo "PASSWORD=${{ secrets.PASSWORD }}" >> .env
             echo "DOMAIN_NAME=${{ secrets.DOMAIN_NAME }}" >> .env
-            echo "ALLOWED_GROUPS"=${{ secrets.ALLOWED_GROUPS }} >> .env
+            echo "ALLOWED_GROUPS=\"${{ secrets.ALLOWED_GROUPS }}\"" >> .env
 
         - name: Replace "// vars.*" in wrangler.jsonc with a json string
           run: |
