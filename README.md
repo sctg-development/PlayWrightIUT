@@ -27,6 +27,58 @@ Data flow:
 3. Parse ICS and store events in D1 database.
 4. Generate and return ICS from cached data.
 
+## Cache System
+
+The application implements a sophisticated caching strategy to minimize costs associated with Cloudflare's browser rendering service, which is free for up to 10 minutes per day but incurs charges beyond this limit.
+
+### How the Cache Works
+
+**Cache Validity Period**: 12 hours per group
+- Each calendar group maintains its own cache timestamp in Cloudflare KV
+- Cache keys follow the pattern `last_${group}` (e.g., `last_RT1_A2`)
+
+**Cache Storage**:
+- **Cloudflare D1 Database**: Stores parsed calendar events with the following structure:
+  - `id`: Auto-incrementing primary key
+  - `grp`: Group identifier (e.g., "RT1_A2")
+  - `uid`: Event unique identifier
+  - `start`/`end`: Event timestamps
+  - `summary`/`description`: Event details
+- **Cloudflare KV**: Stores cache metadata:
+  - Last fetch timestamps per group
+  - Group statistics
+  - Known groups list
+
+**Cache Logic Flow**:
+1. **Cache Check**: When a request arrives for `/iutrt-bethune?group=X`:
+   - Retrieve `last_X` timestamp from KV
+   - Calculate if 12+ hours have passed since last fetch
+
+2. **Cache Hit**: If cache is still valid (< 12 hours old):
+   - Skip browser rendering entirely
+   - Generate ICS directly from D1 database
+   - Return cached calendar data
+
+3. **Cache Miss**: If cache is stale (≥ 12 hours old):
+   - Launch Cloudflare Browser Rendering (Playwright)
+   - Navigate to ADE system and export fresh ICS
+   - Parse ICS content and store events in D1
+   - Update `last_X` timestamp in KV
+   - Generate and return new calendar data
+
+### Cost Optimization Benefits
+
+- **Browser Rendering Usage**: Only triggered when cache expires (every 12 hours per group)
+- **Free Tier Utilization**: With typical usage patterns, stays well within 10 minutes/day free limit
+- **Scalability**: Multiple groups can share the same infrastructure without multiplicative costs
+- **Performance**: Cached responses serve near-instantaneously from database
+
+### Cache Invalidation Strategy
+
+- **Time-based**: Automatic expiration after 12 hours
+- **Group-specific**: Each group maintains independent cache validity
+- **Error-resilient**: Cache misses don't break functionality (fallback to fresh fetch)
+
 ## Setup
 
 ### Prerequisites
