@@ -10,6 +10,9 @@ A Cloudflare Worker that automates the export of ICS calendar files from the ADE
 - **Static Landing Page**: Serves a simple animated landing page at the root URL.
 - **Monorepo Structure**: Organized with Yarn workspaces for easy development and deployment.
 
+## Screenshot  
+<img width="758" height="497" alt="iut" src="https://github.com/user-attachments/assets/46e2276e-73ab-439b-a4e4-415e0bce009f" />
+
 ## Architecture
 
 The project is structured as a Yarn monorepo with the following components:
