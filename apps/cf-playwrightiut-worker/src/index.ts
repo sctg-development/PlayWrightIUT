@@ -145,6 +145,20 @@ export default {
 	 * @returns Promise that resolves to an HTTP response
 	 */
 	async fetch(request, env, ctx): Promise<Response> {
+		const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
+
+		// Skip rate limiting for development IPs (localhost)
+		if (!isDevelopmentIP(clientIP)) {
+			const rateLimitResult = await env.RATELIMITER.limit({ key: clientIP });
+
+			if (!rateLimitResult.success) {
+				return new Response('Rate limit exceeded. Please wait before retrying.', { status: 429 });
+			}
+		}
+
+		// Log request details in the console with the user agent
+		console.log(`[REQUEST] ${new Date().toISOString()} - ${clientIP} - ${request.method} ${request.url} - ${request.headers.get('User-Agent')}`);
+
 		const url = new URL(request.url);
 		if (url.pathname === '/') {
 			// Get known groups and their stats
@@ -237,17 +251,6 @@ export default {
 
 		if (url.pathname !== '/iutrt-bethune') {
 			return new Response('Not Found', { status: 404 });
-		}
-
-		const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-
-		// Skip rate limiting for development IPs (localhost)
-		if (!isDevelopmentIP(clientIP)) {
-			const rateLimitResult = await env.RATELIMITER.limit({ key: clientIP });
-
-			if (!rateLimitResult.success) {
-				return new Response('Rate limit exceeded. Please wait before retrying.', { status: 429 });
-			}
 		}
 
 		const group = url.searchParams.get('group');
