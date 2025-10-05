@@ -418,7 +418,7 @@ export async function getCalendarICS(page: any, username: string, password: stri
         console.log(`[ADE] ICS URL extracted: ${icsUrl}`);
 
         // Take final screenshot showing the generated URL
-        await takeAndStoreScreenshot(page, cache, group, 'ics_url_generated');
+        // await takeAndStoreScreenshot(page, cache, group, 'ics_url_generated');
 
         // Step 14: Download the actual ICS file content
         // We now have the URL, so we can fetch the calendar data
