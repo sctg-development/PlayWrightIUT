@@ -96,7 +96,7 @@ export function renderHome(statsHtml: string): string {
             font-size: 12px;
             opacity: 0.8;
         }
-        @media (min-width: 400px) {
+        @media (min-width: 600px) {
             .qr-codes {
                 flex-direction: row;
                 justify-content: center;
