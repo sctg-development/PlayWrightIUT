@@ -324,7 +324,7 @@ export default {
 		console.log(`Last fetch for group ${group}: ${lastFetch ? new Date(parseInt(lastFetch)).toISOString() : 'never'}. Should fetch: ${shouldFetch}`);
 		if (shouldFetch) {
 			const browser = await launch(env.CFBROWSER);
-			const page = await browser.newPage();
+			const page = await browser.newPage({ locale: 'fr-FR', geolocation: { latitude: 50.517299, longitude: 2.655439 }, permissions: ['geolocation'] });
 			try {
 				const icsContent = await getCalendarICS(page, env.USERNAME, env.PASSWORD, group, dates.startDate, dates.endDate);
 				if (icsContent) {
