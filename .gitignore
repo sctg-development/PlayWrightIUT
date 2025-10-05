@@ -22,6 +22,7 @@ node_modules
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+.DS_Store
 .env
 .env.swp
 _sensitive_datas/_sensitive_datas.tar.xz
