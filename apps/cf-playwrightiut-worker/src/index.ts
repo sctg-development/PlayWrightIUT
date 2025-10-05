@@ -22,6 +22,7 @@
 
 import { launch } from '@cloudflare/playwright';
 import ical from 'ical';
+import renderHome from './home';
 
 /**
  * Environment variables and bindings available to the Cloudflare Worker
@@ -303,68 +304,7 @@ export default {
 				console.log('Error fetching stats:', error);
 			}
 
-			const html = `<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IUT Béthune - Réseaux et Télécoms</title>
-    <style>
-        body {
-            background: #00091B;
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-family: sans-serif;
-            color: white;
-            overflow: hidden;
-        }
-        #content {
-            text-align: center;
-            animation: descend 2s ease-out forwards;
-            opacity: 0;
-            transform: translateY(-100px);
-        }
-        @keyframes descend {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        .main-text {
-            font-size: 50px;
-            margin: 0;
-            line-height: 1.2;
-        }
-        .plus {
-            color: #4febfe;
-        }
-        .stats {
-            margin: 20px 0;
-            font-size: 10px;
-            opacity: 0.8;
-        }
-        .footer {
-            font-size: 9px;
-            margin: 20px 0 0 0;
-        }
-        a {
-            color: white;
-            text-decoration: none;
-        }
-    </style>
-</head>
-<body>
-    <div id="content">
-        <p class="main-text">IUT <span class="plus">+</span> Béthune</p>
-        <p class="main-text">Réseaux et Télécoms</p>
-        <div class="stats">${statsHtml}</div>
-        <p class="footer"><a href="https://github.com/sctg-development/PlayWrightIUT">©2025 Ronan Le Meillat - SCTG Development</a></p>
-    </div>
-</body>
-</html>`;
+			const html = renderHome(statsHtml);
 			return new Response(html, { headers: { 'Content-Type': 'text/html' } });
 		}
 
