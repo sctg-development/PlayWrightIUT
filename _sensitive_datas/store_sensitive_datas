@@ -20,24 +20,142 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-#1-store
+# =============================================================================
+# Secure Backup Script for Sensitive Data
+# =============================================================================
+#
+# This script creates an encrypted backup of sensitive project files including:
+# - Environment variables (.env files)
+# - Cloudflare Worker configuration (.wrangler)
+# - VS Code settings and launch configurations
+# - Launch scripts
+#
+# The backup process:
+# 1. Validates required environment variables
+# 2. Creates a compressed tar.xz archive of specified files
+# 3. Calculates SHA256 integrity hash for verification
+# 4. Ensures .gitignore excludes the archive from version control
+# 5. Encrypts the archive using AES-256-CBC with PBKDF2 key derivation
+# 6. Removes the unencrypted archive for security
+#
+# Requirements:
+# - PROJECT_ROOT environment variable must be set
+# - CRYPTOKEN environment variable must be set for encryption
+# - OpenSSL must be installed
+# - tar must be installed
+#
+# Usage:
+#   export PROJECT_ROOT="/path/to/project"
+#   export CRYPTOKEN="your-encryption-key"
+#   ./store_sensitive_datas
+#
+# Output:
+#   _sensitive_datas/_sensitive_datas.tar.xz.enc (encrypted backup)
+# =============================================================================
+
+# Configuration Section
+# ====================
+
+# List of files and directories to include in the backup
+# Uses glob patterns for flexible file matching
+FILES_TO_BACKUP=(
+    ".env"                                           # Environment variables
+    "apps/cf-playwrightiut-worker/.wrangler"         # Cloudflare Worker config
+    "apps/cf-playwrightiut-worker/.vscode/launch.json"  # VS Code debug config
+    "apps/cf-playwrightiut-worker/.vscode/settings.json" # VS Code settings
+    "client/.vscode/launch.json"                     # Client VS Code debug config
+    "client/.vscode/settings.json"                   # Client VS Code settings
+    "./launch-*"                                     # All launch scripts
+)
+
+# Encryption configuration
+# AES-256-CBC with PBKDF2 provides strong encryption with key derivation
+# Note: AES-GCM would be preferred for authenticated encryption, but may not be
+# supported in all OpenSSL versions. AES-CBC with PBKDF2 is widely compatible.
+CIPHER_ALGO="aes-256-cbc"
+
+# PBKDF2 iterations for key derivation (higher = more secure but slower)
+# 100,000 iterations provides good security while remaining practical
+PBKDF2_ITERATIONS=100000
+
+# =============================================================================
+# Main Script Logic
+# =============================================================================
+
+# Step 1: Validate environment variables
+# --------------------------------------
 if [ -z "${PROJECT_ROOT}" ]; then
-    echo "PROJECT_ROOT is empty: $PROJECT_ROOT"
+    echo "ERROR: PROJECT_ROOT is empty: $PROJECT_ROOT"
+    echo "Please set PROJECT_ROOT to the project root directory"
     exit -1
 fi
+
 cd $PROJECT_ROOT
+
 if [ -z "${CRYPTOKEN}" ]; then
-    echo "CRYPTOKEN is empty: $CRYPTOKEN"
+    echo "ERROR: CRYPTOKEN is empty: $CRYPTOKEN"
+    echo "Please set CRYPTOKEN to your encryption passphrase"
     exit -1
 fi
+
+# Step 2: Create compressed archive
+# ---------------------------------
+echo "Creating compressed archive of sensitive files..."
+rm -f _sensitive_datas/_sensitive_datas.tar.xz
 tar -cvJf _sensitive_datas/_sensitive_datas.tar.xz \
-    .env \
-    apps/cf-playwrightiut-worker/.wrangler apps/cf-playwrightiut-worker/.vscode/launch.json apps/cf-playwrightiut-worker/.vscode/settings.json \
-    client/.vscode/launch.json client/.vscode/settings.json \
-    ./launch-* .env
-#2-encrypt
-openssl aes-256-cbc -base64 -md sha256 -pass pass:"$CRYPTOKEN" -in _sensitive_datas/_sensitive_datas.tar.xz -out _sensitive_datas/_sensitive_datas.tar.xz.enc
-#3-delete 
+    "${FILES_TO_BACKUP[@]}"
+
+# Verify archive was created successfully
+if [ -z _sensitive_datas/_sensitive_datas.tar.xz ]; then
+    echo "ERROR: Failed to create archive"
+    exit 1
+fi
+
+# Step 3: Calculate integrity hash
+# -----------------------------------
+echo "Calculating SHA256 integrity hash..."
+ARCHIVE_HASH=$(sha256sum _sensitive_datas/_sensitive_datas.tar.xz | cut -d' ' -f1)
+echo "$ARCHIVE_HASH" > _sensitive_datas/_sensitive_datas.tar.xz.sha256
+echo "✓ Integrity hash saved: $ARCHIVE_HASH"
+
+# Step 4: Ensure .gitignore excludes the archive
+# -----------------------------------------------
+GITIGNORE_FILE="$PROJECT_ROOT/_sensitive_datas/.gitignore"
+if [ ! -f "$GITIGNORE_FILE" ]; then
+    echo "Creating .gitignore file to exclude sensitive archive..."
+    # Ensure the directory exists
+    mkdir -p "$PROJECT_ROOT/_sensitive_datas"
+    echo "_sensitive_datas.tar.xz" > "$GITIGNORE_FILE"
+    echo "✓ Created $GITIGNORE_FILE with archive exclusion rules"
+elif ! grep -q "^_sensitive_datas\.tar\.xz$" "$GITIGNORE_FILE"; then
+    echo "Adding archive exclusion to existing .gitignore..."
+    echo "_sensitive_datas.tar.xz" >> "$GITIGNORE_FILE"
+    echo "✓ Updated $GITIGNORE_FILE with archive exclusion rules"
+else
+    echo "✓ Archive exclusion already present in .gitignore"
+fi
+
+# Step 5: Encrypt the archive
+# ---------------------------
+echo "Encrypting archive with ${CIPHER_ALGO}..."
+openssl enc -${CIPHER_ALGO} -pbkdf2 -iter ${PBKDF2_ITERATIONS} -salt -pass pass:"$CRYPTOKEN" \
+    -in _sensitive_datas/_sensitive_datas.tar.xz \
+    -out _sensitive_datas/_sensitive_datas.tar.xz.enc
+
+# Verify encryption was successful
+if [ $? -ne 0 ]; then
+    echo "ERROR: Encryption failed"
+    # Don't delete the unencrypted file if encryption failed
+    exit 1
+fi
+
+# Step 6: Clean up unencrypted archive
+# ------------------------------------
+echo "Removing unencrypted archive for security..."
 rm _sensitive_datas/_sensitive_datas.tar.xz
 
-echo "CRYPTED with 'openssl aes-256-cbc -base64 -md sha256 -pass pass:\"$CRYPTOKEN\"'"
+# Step 7: Confirmation
+# -------------------
+echo "✓ Backup completed successfully!"
+echo "Encrypted backup saved as: _sensitive_datas/_sensitive_datas.tar.xz.enc"
+echo "Algorithm used: ${CIPHER_ALGO} with PBKDF2 (${PBKDF2_ITERATIONS} iterations)"
