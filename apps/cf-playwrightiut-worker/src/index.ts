@@ -187,6 +187,61 @@ async function groupExists(db: D1Database, group: string): Promise<boolean> {
 }
 
 /**
+ * Configuration constants for ADE automation
+ */
+const ADE_CONFIG = {
+	urls: {
+		login: 'https://sso.univ-artois.fr/cas/login?service=https://ade-consult.univ-artois.fr/direct/myplanning.jsp',
+		planning: 'https://ade-consult.univ-artois.fr/direct/myplanning.jsp'
+	},
+	selectors: {
+		exportButton: '#x-auto-112 button',
+		logDetail: '#logdetail',
+		reconnectButton: 'button:first-of-type',
+		groupCell: (group: string) => `td:has(span:has-text("${group}"))`
+	},
+	timeouts: {
+		navigation: 10000,
+		elementWait: 5000,
+		actionDelay: 1000
+	},
+	labels: {
+		startDate: ['Date de début', 'Start Date'],
+		endDate: ['Date de fin', 'End Date'],
+		generateUrl: ['Générer URL', 'Generate URL']
+	},
+	userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0.1 Safari/605.1.15',
+	acceptLanguage: 'fr-FR,fr;q=0.9,en;q=0.8'
+};
+
+/**
+ * Validates input parameters for ADE calendar export
+ * @param username - ADE login username
+ * @param password - ADE login password
+ * @param group - The group identifier
+ * @param startDate - Start date in DD/MM/YYYY format
+ * @param endDate - End date in DD/MM/YYYY format
+ * @throws Error if validation fails
+ */
+function validateADEInputs(username: string, password: string, group: string, startDate: string, endDate: string): void {
+	if (!username?.trim()) {
+		throw new Error('Username is required');
+	}
+	if (!password?.trim()) {
+		throw new Error('Password is required');
+	}
+	if (!group?.trim()) {
+		throw new Error('Group parameter is required');
+	}
+	if (!startDate?.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+		throw new Error('Start date must be in DD/MM/YYYY format');
+	}
+	if (!endDate?.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+		throw new Error('End date must be in DD/MM/YYYY format');
+	}
+}
+
+/**
  * Automates the ADE calendar export process using Playwright browser automation
  * @param page - The Playwright page instance
  * @param username - ADE login username
@@ -198,13 +253,18 @@ async function groupExists(db: D1Database, group: string): Promise<boolean> {
  * @throws Error if authentication fails or unexpected page behavior occurs
  */
 async function getCalendarICS(page: any, username: string, password: string, group: string, startDate: string, endDate: string): Promise<string | null> {
-	const startDateLabels = ['Date de début', 'Start Date'];
-	const endDateLabels = ['Date de fin', 'End Date'];
-	const generateURLButtonLabels = ['Générer URL', 'Generate URL'];
+	// Validate input parameters
+	validateADEInputs(username, password, group, startDate, endDate);
 
 	// Define User-Agent to mimic Safari and force French
-	await page.route('**', (route: any) => route.continue({ headers: { ...route.request().headers(), 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0.1 Safari/605.1.15', 'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8' } }));
-	await page.goto('https://sso.univ-artois.fr/cas/login?service=https://ade-consult.univ-artois.fr/direct/myplanning.jsp');
+	await page.route('**', (route: any) => route.continue({
+		headers: {
+			...route.request().headers(),
+			'User-Agent': ADE_CONFIG.userAgent,
+			'Accept-Language': ADE_CONFIG.acceptLanguage
+		}
+	}));
+	await page.goto(ADE_CONFIG.urls.login);
 	await page.waitForLoadState('domcontentloaded');
 
 	// Check title
@@ -220,28 +280,49 @@ async function getCalendarICS(page: any, username: string, password: string, gro
 		(document.getElementById("fm1") as HTMLFormElement).submit();
 	}, { u: username, p: password });
 
-	// Wait for redirection to ADE page (limit timeout to 10 seconds)
-	await page.waitForURL('https://ade-consult.univ-artois.fr/direct/myplanning.jsp*', { timeout: 10000 });
+	// Wait for redirection to ADE page (limit timeout to configured timeout)
+	await page.waitForURL(`${ADE_CONFIG.urls.planning}*`, { timeout: ADE_CONFIG.timeouts.navigation });
 	await page.waitForLoadState('domcontentloaded');
 
 	// Click on the "Me reconnecter" button (first button)
-	await page.locator('button').first().click();
+	await page.locator(ADE_CONFIG.selectors.reconnectButton).click();
 
 	// Wait for new navigation after click
-	await page.waitForURL('https://ade-consult.univ-artois.fr/direct/myplanning.jsp*', { timeout: 10000 });
+	await page.waitForURL(`${ADE_CONFIG.urls.planning}*`, { timeout: ADE_CONFIG.timeouts.navigation });
 	await page.waitForLoadState('domcontentloaded');
 	// Wait for GWT scripts to load and execute
 	await page.waitForLoadState('networkidle');
 
 	// Click on the td containing the span with innerHTML = group
-	await page.locator(`td:has(span:has-text("${group}"))`).click();
-	// Wait a bit for the change
-	await page.waitForTimeout(2000);
+	// Try multiple selector strategies for robustness
+	const groupCell = await page.locator(ADE_CONFIG.selectors.groupCell(group)).or(
+		page.locator(`span:has-text("${group}")`).locator('xpath=ancestor::td')
+	).or(
+		page.locator(`[data-group="${group}"]`)
+	).first();
 
-	// Click on the button in the element x-auto-112 (Table containing the Export button)
-	await page.locator('#x-auto-112 button').click();
-	// Wait a bit for the change
-	await page.waitForTimeout(500);
+	if (await groupCell.count() === 0) {
+		throw new Error(`Group "${group}" not found on the page`);
+	}
+
+	await groupCell.click();
+	// Wait for the change with a more robust approach
+	await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay);
+
+	// Click on the export button with multiple fallback strategies
+	const exportButton = await page.locator(ADE_CONFIG.selectors.exportButton).or(
+		page.locator('button', { hasText: /Export|Exporter/i })
+	).or(
+		page.locator('[data-testid*="export"]')
+	).first();
+
+	if (await exportButton.count() === 0) {
+		throw new Error('Export button not found on the page');
+	}
+
+	await exportButton.click();
+	// Wait for the change
+	await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay / 2);
 
 	await page.evaluate(({ s, e, startLabels, endLabels }: { s: string, e: string, startLabels: string[], endLabels: string[] }) => {
 		const labels = Array.from(document.querySelectorAll('label'));
@@ -257,24 +338,34 @@ async function getCalendarICS(page: any, username: string, password: string, gro
 			const endInput = inputId ? document.getElementById(inputId) as HTMLInputElement : null;
 			if (endInput && endInput.type === 'text') endInput.value = e;
 		}
-	}, { s: startDate, e: endDate, startLabels: startDateLabels, endLabels: endDateLabels });
+	}, { s: startDate, e: endDate, startLabels: ADE_CONFIG.labels.startDate, endLabels: ADE_CONFIG.labels.endDate });
 
-	// Click on the "Générer URL" button
-	const generateButton = await page.locator('button', { hasText: new RegExp(generateURLButtonLabels.join('|')) });
+	// Click on the "Générer URL" button with more robust selector
+	const generateButton = await page.locator('button', { hasText: new RegExp(ADE_CONFIG.labels.generateUrl.join('|')) }).or(
+		page.locator('[data-testid*="generate"]')
+	).first();
+
+	if (await generateButton.count() === 0) {
+		throw new Error('Generate URL button not found on the page');
+	}
+
 	await generateButton.click();
-	// Wait a bit for the change
-	await page.waitForTimeout(2000);
+	// Wait for the change with a more robust approach
+	await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay * 2);
 
-	// Extract the ICS file URL
-	const icsUrl = await page.evaluate(() => {
-		const logdetail = document.getElementById("logdetail");
+	// Extract the ICS file URL with better error handling
+	const icsUrl = await page.evaluate((logDetailSelector: string) => {
+		const logdetail = document.querySelector(logDetailSelector);
 		if (logdetail) {
 			const firstA = logdetail.querySelector('a');
 			return firstA ? firstA.href : null;
 		}
 		return null;
-	});
-	if (!icsUrl) return null;
+	}, ADE_CONFIG.selectors.logDetail);
+
+	if (!icsUrl) {
+		throw new Error('ICS URL was not generated');
+	}
 
 	// Fetch the ICS content
 	const response = await page.request.get(icsUrl);
