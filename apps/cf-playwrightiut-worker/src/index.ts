@@ -401,7 +401,7 @@ export default {
 		// Check KV for last fetch
 		const lastFetch = await env.CACHE.get(`last_${group}`);
 		const now = Date.now();
-		const twelveHours = 6 * 60 * 60 * 1000;
+		const twelveHours = 12 * 60 * 60 * 1000;
 		let shouldFetch = !lastFetch || (now - parseInt(lastFetch)) > twelveHours;
 		console.log(`Last fetch for group ${group}: ${lastFetch ? new Date(parseInt(lastFetch)).toISOString() : 'never'}. Should fetch: ${shouldFetch}`);
 		if (shouldFetch) {
