@@ -91,21 +91,100 @@ export const ADE_CONFIG = {
 };
 
 /**
- * Input validation function
+ * Helper function to retrieve stored screenshots for a specific group
  *
- * This function checks that all required parameters are provided and have the correct format.
- * Input validation is crucial for:
- * 1. Security: Prevents malicious input from causing issues
- * 2. Reliability: Ensures the scraper has valid data to work with
- * 3. Debugging: Makes it easier to identify problems when they occur
+ * This function returns the list of screenshot keys and their base64 data
+ * for debugging failed scraping sessions.
  *
- * @param username - ADE login username (must not be empty)
- * @param password - ADE login password (must not be empty)
- * @param group - The group identifier to export (must not be empty)
- * @param startDate - Start date in DD/MM/YYYY format (must match regex pattern)
- * @param endDate - End date in DD/MM/YYYY format (must match regex pattern)
- * @throws Error if any validation check fails
+ * @param cache - KV namespace where screenshots are stored
+ * @param group - Group identifier to retrieve screenshots for
+ * @returns Promise that resolves to array of screenshot objects with keys and base64 data
  */
+export async function getStoredScreenshots(cache: KVNamespace, group: string): Promise<Array<{ key: string, data: string, timestamp: number, step: string }>> {
+    try {
+        const screenshotListKey = `${group}_screenshots_list`;
+        const existingList = await cache.get(screenshotListKey);
+
+        if (!existingList) {
+            return [];
+        }
+
+        const screenshotKeys: string[] = JSON.parse(existingList);
+        const screenshots = [];
+
+        for (const key of screenshotKeys) {
+            const data = await cache.get(key);
+            if (data) {
+                // Extract timestamp and step from key format: group_screenshot_timestamp_step
+                const parts = key.split('_screenshot_')[1].split('_');
+                const timestamp = parseInt(parts[0]);
+                const step = parts.slice(1).join('_').replace(/_/g, ' ');
+
+                screenshots.push({
+                    key,
+                    data,
+                    timestamp,
+                    step
+                });
+            }
+        }
+
+        // Sort by timestamp (most recent first)
+        return screenshots.sort((a, b) => b.timestamp - a.timestamp);
+
+    } catch (error) {
+        console.error(`[SCREENSHOT] Failed to retrieve screenshots for group ${group}:`, error);
+        return [];
+    }
+}
+async function takeAndStoreScreenshot(page: any, cache: KVNamespace, group: string, step: string): Promise<void> {
+    try {
+        // Take screenshot as buffer
+        const screenshotBuffer = await page.screenshot({ fullPage: true });
+
+        // Convert to base64
+        const screenshotBase64 = screenshotBuffer.toString('base64');
+
+        // Create unique key with timestamp
+        const timestamp = Date.now();
+        const screenshotKey = `${group}_screenshot_${timestamp}_${step.replace(/\s+/g, '_')}`;
+
+        // Store the screenshot
+        await cache.put(screenshotKey, screenshotBase64);
+
+        // Get existing screenshots for this group to manage rotation
+        const screenshotListKey = `${group}_screenshots_list`;
+        const existingList = await cache.get(screenshotListKey);
+        let screenshots: string[] = [];
+
+        if (existingList) {
+            screenshots = JSON.parse(existingList);
+        }
+
+        // Add new screenshot to the list
+        screenshots.push(screenshotKey);
+
+        // Keep only the 10 most recent screenshots sessions (each session may have 7 steps)
+        if (screenshots.length > 7 * 10) {
+            // Remove oldest screenshots from KV
+            const screenshotsToRemove = screenshots.slice(0, screenshots.length - (7 * 10));
+            for (const oldKey of screenshotsToRemove) {
+                await cache.delete(oldKey);
+            }
+            // Keep only the 7 * 10 most recent
+            screenshots = screenshots.slice(-7 * 10);
+        }
+
+        // Update the list in KV
+        await cache.put(screenshotListKey, JSON.stringify(screenshots));
+
+        console.log(`[SCREENSHOT] Captured and stored: ${step} (${screenshotBase64.length} chars)`);
+
+    } catch (error) {
+        console.error(`[SCREENSHOT] Failed to capture screenshot for ${step}:`, error);
+        // Don't throw error - screenshot failure shouldn't break the main process
+    }
+}
 export function validateADEInputs(username: string, password: string, group: string, startDate: string, endDate: string): void {
     // Check that username is provided and not just whitespace
     if (!username?.trim()) {
@@ -162,7 +241,7 @@ export function validateADEInputs(username: string, password: string, group: str
  * @returns Promise that resolves to ICS calendar content as string, or null if failed
  * @throws Error if authentication fails or unexpected page behavior occurs
  */
-export async function getCalendarICS(page: any, username: string, password: string, group: string, startDate: string, endDate: string): Promise<string | null> {
+export async function getCalendarICS(page: any, username: string, password: string, group: string, startDate: string, endDate: string, cache: KVNamespace): Promise<string | null> {
     // Record start time for performance monitoring and error reporting
     const startTime = Date.now();
     console.log(`[ADE] Starting calendar export for group "${group}" from ${startDate} to ${endDate}`);
@@ -190,6 +269,9 @@ export async function getCalendarICS(page: any, username: string, password: stri
         await page.goto(ADE_CONFIG.urls.login);
         await page.waitForLoadState('domcontentloaded');
 
+        // Take screenshot after navigation to login page
+        await takeAndStoreScreenshot(page, cache, group, 'login_page_loaded');
+
         // Step 4: Verify we're on the correct login page by checking the page title
         const title = await page.title();
         console.log(`[ADE] Page title: "${title}"`);
@@ -214,6 +296,9 @@ export async function getCalendarICS(page: any, username: string, password: stri
         await page.waitForLoadState('domcontentloaded');
         console.log('[ADE] Successfully redirected to ADE planning page');
 
+        // Take screenshot after successful login and redirection
+        await takeAndStoreScreenshot(page, cache, group, 'planning_page_loaded');
+
         // Step 7: Click reconnect button to establish ADE session
         // ADE requires this step after initial login
         console.log('[ADE] Clicking reconnect button...');
@@ -226,6 +311,9 @@ export async function getCalendarICS(page: any, username: string, password: stri
         // Wait for Google Web Toolkit (GWT) scripts to fully load - ADE uses GWT
         await page.waitForLoadState('networkidle');
         console.log('[ADE] Page reloaded and scripts loaded');
+
+        // Take screenshot after page is fully loaded with ADE interface
+        await takeAndStoreScreenshot(page, cache, group, 'ade_interface_loaded');
 
         // Step 9: Find and select the desired group from the ADE interface
         // ADE displays groups in a table, and we need to click on the correct group cell
@@ -247,6 +335,9 @@ export async function getCalendarICS(page: any, username: string, password: stri
         await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay);
         console.log(`[ADE] Group "${group}" selected successfully`);
 
+        // Take screenshot after group selection
+        await takeAndStoreScreenshot(page, cache, group, 'group_selected');
+
         // Step 10: Open the export dialog by clicking the export button
         // ADE has an export feature that generates ICS calendar files
         console.log('[ADE] Looking for export button...');
@@ -265,6 +356,9 @@ export async function getCalendarICS(page: any, username: string, password: stri
         // Brief wait for the export dialog to open
         await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay / 2);
         console.log('[ADE] Export dialog opened');
+
+        // Take screenshot after export dialog is opened
+        await takeAndStoreScreenshot(page, cache, group, 'export_dialog_opened');
 
         // Step 11: Fill the date range in the export form
         // ADE allows exporting calendar data for a specific date range
@@ -303,6 +397,9 @@ export async function getCalendarICS(page: any, username: string, password: stri
         await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay * 2);
         console.log('[ADE] URL generation initiated');
 
+        // Take screenshot after URL generation is initiated
+        await takeAndStoreScreenshot(page, cache, group, 'url_generation_initiated');
+
         // Step 13: Extract the generated ICS file URL from the page
         // ADE displays the download link in a specific area of the page
         console.log('[ADE] Extracting ICS URL...');
@@ -319,6 +416,9 @@ export async function getCalendarICS(page: any, username: string, password: stri
             throw new Error('ICS URL was not generated');
         }
         console.log(`[ADE] ICS URL extracted: ${icsUrl}`);
+
+        // Take final screenshot showing the generated URL
+        await takeAndStoreScreenshot(page, cache, group, 'ics_url_generated');
 
         // Step 14: Download the actual ICS file content
         // We now have the URL, so we can fetch the calendar data

@@ -24,6 +24,7 @@ import { launch } from '@cloudflare/playwright';
 import ical from 'ical';
 import renderHome from './home';
 import { getCalendarICS } from './ade-scraper';
+import { generateScreenshotsPage } from './screenshots';
 import {
 	android_chrome_192x192_png,
 	android_chrome_512x512_png,
@@ -231,7 +232,7 @@ export default {
 						if (statsKey) {
 							const stats = JSON.parse(statsKey);
 							const lastCheck = new Date(stats.last_check).toLocaleDateString('fr-FR');
-							statsHtml += `<div style="margin: 2px 0; font-size: 10px;">${group}: ${stats.total_events} événements (maj: ${lastCheck})</div>`;
+							statsHtml += `<div style="margin: 2px 0; font-size: 10px;"><a href="/ade-screenshots?group=${group}">${group}: ${stats.total_events} événements (maj: ${lastCheck})</a></div>`;
 						}
 					}
 				}
@@ -280,6 +281,16 @@ export default {
 			return new Response(manifestData, { headers: { 'Content-Type': 'application/manifest+json' } });
 		}
 
+		// Screenshots route
+		if (url.pathname === '/ade-screenshots') {
+			const group = url.searchParams.get('group');
+			if (!group) {
+				return new Response('Missing required parameter: group', { status: 400 });
+			}
+			const html = await generateScreenshotsPage(env.CACHE, group);
+			return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+		}
+
 		if (url.pathname !== '/iutrt-bethune') {
 			return new Response('Not Found', { status: 404 });
 		}
@@ -326,7 +337,7 @@ export default {
 			const browser = await launch(env.CFBROWSER);
 			const page = await browser.newPage({ locale: 'fr-FR', geolocation: { latitude: 50.517299, longitude: 2.655439 }, permissions: ['geolocation'] });
 			try {
-				const icsContent = await getCalendarICS(page, env.USERNAME, env.PASSWORD, group, dates.startDate, dates.endDate);
+				const icsContent = await getCalendarICS(page, env.USERNAME, env.PASSWORD, group, dates.startDate, dates.endDate, env.CACHE);
 				if (icsContent) {
 					await parseAndStoreICS(env.iutics, env.CACHE, group, icsContent, dates.startDate, dates.endDate);
 					await env.CACHE.put(`last_${group}`, now.toString());
