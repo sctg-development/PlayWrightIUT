@@ -68,9 +68,11 @@ jobs:
             cd apps/cf-playwrightiut-worker
             cp ../../.env .env
             cp wrangler.jsonc wrangler.jsonc.bak
-            set -a && source .env && set +a 
+            set -a && source .env && set +a
             cat .env
-            cat wrangler.jsonc.bak | sed 's|// "vars".*.|,"vars": {  "USERNAME": "'"${USERNAME}"'", "PASSWORD": "'"${PASSWORD}"'", "ALLOWED_GROUPS": "'"${ALLOWED_GROUPS}"'" }|' > wrangler.jsonc.2
+            # Escape special characters in ALLOWED_GROUPS for sed
+            ESCAPED_ALLOWED_GROUPS=$(printf '%s\n' "$ALLOWED_GROUPS" | sed 's/[[\.*^$()+?{|]/\\&/g')
+            cat wrangler.jsonc.bak | sed 's|// "vars".*.|,"vars": {  "USERNAME": "'"${USERNAME}"'", "PASSWORD": "'"${PASSWORD}"'", "ALLOWED_GROUPS": "'"${ESCAPED_ALLOWED_GROUPS}"'" }|' > wrangler.jsonc.2
             cat wrangler.jsonc.2 | sed 's|// "routes".*.|,"routes": [{ "pattern": "'"${DOMAIN_NAME}"'", "custom_domain": true }]|'  > wrangler.jsonc
             cat wrangler.jsonc
         - name: Deploy
