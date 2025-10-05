@@ -251,7 +251,7 @@ export default {
 						if (statsKey) {
 							const stats = JSON.parse(statsKey);
 							const lastCheck = new Date(stats.last_check).toLocaleDateString('fr-FR');
-							statsHtml += `<div style="margin: 2px 0; font-size: 10px;"><a href="/ade-screenshots?group=${group}">${group}: ${stats.total_events} événements (maj: ${lastCheck})</a></div>`;
+							statsHtml += `<div style="margin: 2px 0; font-size: 10px;"><a href="/iutrt-bethune?group=${group}">${group}:</a> <a href="/ade-screenshots?group=${group}">${stats.total_events} événements (maj: ${lastCheck})</a></div>`;
 						}
 					}
 				}
@@ -343,10 +343,10 @@ export default {
 			console.log(`Group ${group} found in DB, using default dates: ${dates.startDate} - ${dates.endDate}`);
 		}
 
-		// Check KV for last fetch
+		// Check KV for last fetch (to enforce 12h cache, 5min if dev IP)
 		const lastFetch = await env.CACHE.get(`last_${group}`);
 		const now = Date.now();
-		const twelveHours = 12 * 60 * 60 * 1000;
+		const twelveHours = !isDevelopmentIP(clientIP) ? 12 * 60 * 60 * 1000 : 5 * 60 * 1000;
 		let shouldFetch = !lastFetch || (now - parseInt(lastFetch)) > twelveHours;
 
 		// If group doesn't exist in DB, always fetch regardless of cache
