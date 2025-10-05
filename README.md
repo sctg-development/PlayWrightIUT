@@ -15,7 +15,8 @@ A Cloudflare Worker that automates the export of ICS calendar files from the ADE
 - **Monorepo Structure**: Organized with Yarn workspaces for easy development and deployment.
 
 ## Screenshot  
-<img width="758" height="497" alt="iut" src="https://github.com/user-attachments/assets/46e2276e-73ab-439b-a4e4-415e0bce009f" />
+<img width="822" height="580" alt="iut2" src="https://github.com/user-attachments/assets/150cbbe1-c124-4209-a036-e8927e046227" />
+
 
 ## Architecture
 
