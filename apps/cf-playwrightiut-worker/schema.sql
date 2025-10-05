@@ -1,8 +1,9 @@
 CREATE TABLE events (
 	grp TEXT NOT NULL,
-	uid TEXT PRIMARY KEY,
+	uid TEXT NOT NULL,
 	start TEXT NOT NULL,
 	end TEXT NOT NULL,
 	summary TEXT,
-	description TEXT
+	description TEXT,
+	PRIMARY KEY (grp, uid)
 );

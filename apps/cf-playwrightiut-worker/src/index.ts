@@ -23,6 +23,7 @@
 import { launch } from '@cloudflare/playwright';
 import ical from 'ical';
 import renderHome from './home';
+import { getCalendarICS } from './ade-scraper';
 import {
 	android_chrome_192x192_png,
 	android_chrome_512x512_png,
@@ -111,25 +112,44 @@ function getSchoolYearDates(): { startDate: string, endDate: string } {
  * @returns Promise that resolves when all events are stored
  */
 async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group: string, icsContent: string, startDate: string, endDate: string): Promise<void> {
+	console.log(`[CACHE] Starting to parse and store ICS for group ${group}, content length: ${icsContent.length}`);
 	const data = ical.parseICS(icsContent);
 	const events = Object.values(data).filter((item: any) => item.type === 'VEVENT');
+	console.log(`[CACHE] Found ${events.length} events in ICS content`);
+	if (events.length > 0) {
+		console.log(`[CACHE] Sample event structure:`, JSON.stringify(events[0], null, 2));
+	}
 
 	// Convert startDate and endDate to Date for comparison
 	const start = new Date(startDate.split('/').reverse().join('-')); // DD/MM/YYYY to YYYY-MM-DD
 	const end = new Date(endDate.split('/').reverse().join('-'));
+	console.log(`[CACHE] Import period: ${start.toISOString()} to ${end.toISOString()}`);
 
-	// Delete events that overlap with the import period
-	// An event overlaps if it ends after the import starts AND starts before the import ends
-	await db.prepare('DELETE FROM events WHERE grp = ? AND end >= ? AND start <= ?').bind(group, start.toISOString(), end.toISOString()).run();
+	// Delete existing events for this group in the import period
+	// We want to replace all events for this group and period
+	const deleteResult = await db.prepare('DELETE FROM events WHERE grp = ?').bind(group).run();
+	console.log(`[CACHE] Deleted ${deleteResult.meta?.changes || 0} existing events for group ${group}`);
 
 	// Insert new events
+	let insertedCount = 0;
+	let skippedCount = 0;
 	for (const event of events) {
-		if (event.start && event.end) {
-			await db.prepare('INSERT INTO events (grp, uid, start, end, summary, description) VALUES (?, ?, ?, ?, ?, ?)')
-				.bind(group, event.uid, event.start.toISOString(), event.end.toISOString(), event.summary, event.description)
-				.run();
+		try {
+			if (event.start && event.end) {
+				console.log(`[CACHE] Inserting event: ${event.summary} (${event.start.toISOString()} - ${event.end.toISOString()})`);
+				await db.prepare('INSERT INTO events (grp, uid, start, end, summary, description) VALUES (?, ?, ?, ?, ?, ?)')
+					.bind(group, event.uid, event.start.toISOString(), event.end.toISOString(), event.summary, event.description)
+					.run();
+				insertedCount++;
+			} else {
+				console.log(`[CACHE] Skipping event without start/end: ${event.summary} (start: ${event.start}, end: ${event.end})`);
+				skippedCount++;
+			}
+		} catch (error) {
+			console.error(`[CACHE] Error inserting event ${event.summary}:`, error);
 		}
 	}
+	console.log(`[CACHE] Inserted ${insertedCount} new events, skipped ${skippedCount} events`);
 
 	// Update group statistics in KV
 	const { results: countResults } = await db.prepare('SELECT COUNT(*) as total FROM events WHERE grp = ?').bind(group).all();
@@ -139,6 +159,7 @@ async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group: strin
 		total_events: totalEvents
 	};
 	await cache.put(`${group}_stats`, JSON.stringify(stats));
+	console.log(`[CACHE] Updated stats for group ${group}: ${totalEvents} total events`);
 
 	// Update known groups list
 	const knownGroupsKey = await cache.get('known_groups');
@@ -149,6 +170,7 @@ async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group: strin
 	if (!knownGroups.includes(group)) {
 		knownGroups.push(group);
 		await cache.put('known_groups', JSON.stringify(knownGroups));
+		console.log(`[CACHE] Added ${group} to known groups list`);
 	}
 }
 
@@ -184,192 +206,6 @@ async function generateICSFromDB(db: D1Database, group: string): Promise<string>
 async function groupExists(db: D1Database, group: string): Promise<boolean> {
 	const { results } = await db.prepare('SELECT COUNT(*) as count FROM events WHERE grp = ?').bind(group).all();
 	return (results[0] as any).count > 0;
-}
-
-/**
- * Configuration constants for ADE automation
- */
-const ADE_CONFIG = {
-	urls: {
-		login: 'https://sso.univ-artois.fr/cas/login?service=https://ade-consult.univ-artois.fr/direct/myplanning.jsp',
-		planning: 'https://ade-consult.univ-artois.fr/direct/myplanning.jsp'
-	},
-	selectors: {
-		exportButton: '#x-auto-112 button',
-		logDetail: '#logdetail',
-		reconnectButton: 'button:first-of-type',
-		groupCell: (group: string) => `td:has(span:has-text("${group}"))`
-	},
-	timeouts: {
-		navigation: 10000,
-		elementWait: 5000,
-		actionDelay: 1000
-	},
-	labels: {
-		startDate: ['Date de début', 'Start Date'],
-		endDate: ['Date de fin', 'End Date'],
-		generateUrl: ['Générer URL', 'Generate URL']
-	},
-	userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0.1 Safari/605.1.15',
-	acceptLanguage: 'fr-FR,fr;q=0.9,en;q=0.8'
-};
-
-/**
- * Validates input parameters for ADE calendar export
- * @param username - ADE login username
- * @param password - ADE login password
- * @param group - The group identifier
- * @param startDate - Start date in DD/MM/YYYY format
- * @param endDate - End date in DD/MM/YYYY format
- * @throws Error if validation fails
- */
-function validateADEInputs(username: string, password: string, group: string, startDate: string, endDate: string): void {
-	if (!username?.trim()) {
-		throw new Error('Username is required');
-	}
-	if (!password?.trim()) {
-		throw new Error('Password is required');
-	}
-	if (!group?.trim()) {
-		throw new Error('Group parameter is required');
-	}
-	if (!startDate?.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-		throw new Error('Start date must be in DD/MM/YYYY format');
-	}
-	if (!endDate?.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-		throw new Error('End date must be in DD/MM/YYYY format');
-	}
-}
-
-/**
- * Automates the ADE calendar export process using Playwright browser automation
- * @param page - The Playwright page instance
- * @param username - ADE login username
- * @param password - ADE login password
- * @param group - The group identifier to export calendar for
- * @param startDate - Start date in DD/MM/YYYY format
- * @param endDate - End date in DD/MM/YYYY format
- * @returns Promise that resolves to the ICS content string or null if failed
- * @throws Error if authentication fails or unexpected page behavior occurs
- */
-async function getCalendarICS(page: any, username: string, password: string, group: string, startDate: string, endDate: string): Promise<string | null> {
-	// Validate input parameters
-	validateADEInputs(username, password, group, startDate, endDate);
-
-	// Define User-Agent to mimic Safari and force French
-	await page.route('**', (route: any) => route.continue({
-		headers: {
-			...route.request().headers(),
-			'User-Agent': ADE_CONFIG.userAgent,
-			'Accept-Language': ADE_CONFIG.acceptLanguage
-		}
-	}));
-	await page.goto(ADE_CONFIG.urls.login);
-	await page.waitForLoadState('domcontentloaded');
-
-	// Check title
-	const title = await page.title();
-	if (!title.includes('Service d\'Authentification Artois')) {
-		throw new Error('Unexpected title: ' + title);
-	}
-
-	// Fill and submit via JS as in the browser
-	await page.evaluate(({ u, p }: { u: string, p: string }) => {
-		(document.getElementById("username") as HTMLInputElement).value = u;
-		(document.getElementById("password") as HTMLInputElement).value = p;
-		(document.getElementById("fm1") as HTMLFormElement).submit();
-	}, { u: username, p: password });
-
-	// Wait for redirection to ADE page (limit timeout to configured timeout)
-	await page.waitForURL(`${ADE_CONFIG.urls.planning}*`, { timeout: ADE_CONFIG.timeouts.navigation });
-	await page.waitForLoadState('domcontentloaded');
-
-	// Click on the "Me reconnecter" button (first button)
-	await page.locator(ADE_CONFIG.selectors.reconnectButton).click();
-
-	// Wait for new navigation after click
-	await page.waitForURL(`${ADE_CONFIG.urls.planning}*`, { timeout: ADE_CONFIG.timeouts.navigation });
-	await page.waitForLoadState('domcontentloaded');
-	// Wait for GWT scripts to load and execute
-	await page.waitForLoadState('networkidle');
-
-	// Click on the td containing the span with innerHTML = group
-	// Try multiple selector strategies for robustness
-	const groupCell = await page.locator(ADE_CONFIG.selectors.groupCell(group)).or(
-		page.locator(`span:has-text("${group}")`).locator('xpath=ancestor::td')
-	).or(
-		page.locator(`[data-group="${group}"]`)
-	).first();
-
-	if (await groupCell.count() === 0) {
-		throw new Error(`Group "${group}" not found on the page`);
-	}
-
-	await groupCell.click();
-	// Wait for the change with a more robust approach
-	await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay);
-
-	// Click on the export button with multiple fallback strategies
-	const exportButton = await page.locator(ADE_CONFIG.selectors.exportButton).or(
-		page.locator('button', { hasText: /Export|Exporter/i })
-	).or(
-		page.locator('[data-testid*="export"]')
-	).first();
-
-	if (await exportButton.count() === 0) {
-		throw new Error('Export button not found on the page');
-	}
-
-	await exportButton.click();
-	// Wait for the change
-	await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay / 2);
-
-	await page.evaluate(({ s, e, startLabels, endLabels }: { s: string, e: string, startLabels: string[], endLabels: string[] }) => {
-		const labels = Array.from(document.querySelectorAll('label'));
-		const startLabel = labels.find(l => startLabels.some(text => l.textContent?.includes(text)));
-		if (startLabel) {
-			const inputId = startLabel.getAttribute('for');
-			const startInput = inputId ? document.getElementById(inputId) as HTMLInputElement : null;
-			if (startInput && startInput.type === 'text') startInput.value = s;
-		}
-		const endLabel = labels.find(l => endLabels.some(text => l.textContent?.includes(text)));
-		if (endLabel) {
-			const inputId = endLabel.getAttribute('for');
-			const endInput = inputId ? document.getElementById(inputId) as HTMLInputElement : null;
-			if (endInput && endInput.type === 'text') endInput.value = e;
-		}
-	}, { s: startDate, e: endDate, startLabels: ADE_CONFIG.labels.startDate, endLabels: ADE_CONFIG.labels.endDate });
-
-	// Click on the "Générer URL" button with more robust selector
-	const generateButton = await page.locator('button', { hasText: new RegExp(ADE_CONFIG.labels.generateUrl.join('|')) }).or(
-		page.locator('[data-testid*="generate"]')
-	).first();
-
-	if (await generateButton.count() === 0) {
-		throw new Error('Generate URL button not found on the page');
-	}
-
-	await generateButton.click();
-	// Wait for the change with a more robust approach
-	await page.waitForTimeout(ADE_CONFIG.timeouts.actionDelay * 2);
-
-	// Extract the ICS file URL with better error handling
-	const icsUrl = await page.evaluate((logDetailSelector: string) => {
-		const logdetail = document.querySelector(logDetailSelector);
-		if (logdetail) {
-			const firstA = logdetail.querySelector('a');
-			return firstA ? firstA.href : null;
-		}
-		return null;
-	}, ADE_CONFIG.selectors.logDetail);
-
-	if (!icsUrl) {
-		throw new Error('ICS URL was not generated');
-	}
-
-	// Fetch the ICS content
-	const response = await page.request.get(icsUrl);
-	return await response.text();
 }
 
 export default {
@@ -478,6 +314,13 @@ export default {
 		const now = Date.now();
 		const twelveHours = 12 * 60 * 60 * 1000;
 		let shouldFetch = !lastFetch || (now - parseInt(lastFetch)) > twelveHours;
+
+		// If group doesn't exist in DB, always fetch regardless of cache
+		if (!exists) {
+			shouldFetch = true;
+			console.log(`Group ${group} not found in DB, forcing fetch`);
+		}
+
 		console.log(`Last fetch for group ${group}: ${lastFetch ? new Date(parseInt(lastFetch)).toISOString() : 'never'}. Should fetch: ${shouldFetch}`);
 		if (shouldFetch) {
 			const browser = await launch(env.CFBROWSER);
