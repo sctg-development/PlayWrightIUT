@@ -21,7 +21,6 @@
  */
 
 import { launch } from '@cloudflare/playwright';
-import { env } from 'cloudflare:workers';
 import ical from 'ical';
 
 /**
