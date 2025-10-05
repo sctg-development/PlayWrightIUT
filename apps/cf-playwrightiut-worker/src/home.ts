@@ -41,10 +41,9 @@ export function renderHome(statsHtml: string): string {
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             font-family: sans-serif;
             color: white;
-            overflow: hidden;
         }
         #content {
             text-align: center;
