@@ -23,6 +23,15 @@
 import { launch } from '@cloudflare/playwright';
 import ical from 'ical';
 import renderHome from './home';
+import {
+	android_chrome_192x192_png,
+	android_chrome_512x512_png,
+	apple_touch_icon_png,
+	favicon_16x16_png,
+	favicon_32x32_png,
+	favicon_ico,
+	site_webmanifest
+} from './favicon/favicon_static';
 
 /**
  * Environment variables and bindings available to the Cloudflare Worker
@@ -306,6 +315,42 @@ export default {
 
 			const html = renderHome(statsHtml);
 			return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+		}
+
+		// Favicon routes
+		if (url.pathname === '/favicon.ico') {
+			const faviconData = Uint8Array.from(atob(favicon_ico), c => c.charCodeAt(0));
+			return new Response(faviconData, { headers: { 'Content-Type': 'image/x-icon' } });
+		}
+
+		if (url.pathname === '/apple-touch-icon.png') {
+			const iconData = Uint8Array.from(atob(apple_touch_icon_png), c => c.charCodeAt(0));
+			return new Response(iconData, { headers: { 'Content-Type': 'image/png' } });
+		}
+
+		if (url.pathname === '/android-chrome-192x192.png') {
+			const iconData = Uint8Array.from(atob(android_chrome_192x192_png), c => c.charCodeAt(0));
+			return new Response(iconData, { headers: { 'Content-Type': 'image/png' } });
+		}
+
+		if (url.pathname === '/android-chrome-512x512.png') {
+			const iconData = Uint8Array.from(atob(android_chrome_512x512_png), c => c.charCodeAt(0));
+			return new Response(iconData, { headers: { 'Content-Type': 'image/png' } });
+		}
+
+		if (url.pathname === '/favicon-16x16.png') {
+			const iconData = Uint8Array.from(atob(favicon_16x16_png), c => c.charCodeAt(0));
+			return new Response(iconData, { headers: { 'Content-Type': 'image/png' } });
+		}
+
+		if (url.pathname === '/favicon-32x32.png') {
+			const iconData = Uint8Array.from(atob(favicon_32x32_png), c => c.charCodeAt(0));
+			return new Response(iconData, { headers: { 'Content-Type': 'image/png' } });
+		}
+
+		if (url.pathname === '/site.webmanifest') {
+			const manifestData = Uint8Array.from(atob(site_webmanifest), c => c.charCodeAt(0));
+			return new Response(manifestData, { headers: { 'Content-Type': 'application/manifest+json' } });
 		}
 
 		if (url.pathname !== '/iutrt-bethune') {
