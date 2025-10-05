@@ -288,11 +288,11 @@ If you prefer to deploy from your computer:
 ### API Endpoints
 
 - **GET /**: Returns the landing page.
-- **GET /iutrt-bethune?groupe=<GROUP>**: Returns the ICS calendar for the specified group.
+- **GET /iutrt-bethune?group=<GROUP>**: Returns the ICS calendar for the specified group.
 
 Example:
 ```
-https://your-worker-url/iutrt-bethune?groupe=RT1_A2
+https://your-worker-url/iutrt-bethune?group=RT1_A2
 ```
 
 ### Testing
