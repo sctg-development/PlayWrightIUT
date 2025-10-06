@@ -21,7 +21,6 @@
  */
 
 import { launch } from '@cloudflare/playwright';
-import ical from 'ical';
 import renderHome from './home';
 import { getCalendarICS } from './ade-scraper';
 import { generateScreenshotsPage } from './screenshots';
@@ -36,19 +35,6 @@ import {
 	favicon_ico,
 	site_webmanifest
 } from './favicon/favicon_static';
-
-/**
- * Environment variables and bindings available to the Cloudflare Worker
- */
-interface Env {
-	CFBROWSER: any;
-	iutics: D1Database;
-	CACHE: KVNamespace;
-	USERNAME: string;
-	PASSWORD: string;
-	RATELIMITER: any;
-	ALLOWED_GROUPS: string; // Allowed groups separated by |
-}
 
 /**
  * Formats a Date object to French date format (DD/MM/YYYY)
