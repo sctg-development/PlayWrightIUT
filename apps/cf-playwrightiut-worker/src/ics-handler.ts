@@ -110,7 +110,7 @@ export async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group
  */
 export async function generateICSFromDB(db: D1Database, cache: KVNamespace, group: string): Promise<string> {
     // Check if we have a cached ICS for this group
-    const cachedICS = await cache.get(`${group}_ics`);
+    const cachedICS = await cache.get(`${group}_ics`, { type: 'text', cacheTtl: 3600 });
     if (cachedICS) {
         console.log(`[CACHE] Returning cached ICS for group ${group}`);
         return cachedICS;
