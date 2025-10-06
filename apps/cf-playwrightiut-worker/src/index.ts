@@ -307,7 +307,7 @@ export default {
 		}
 
 		// Generate and return ICS from DB
-		const ics = await generateICSFromDB(env.iutics, group);
+		const ics = await generateICSFromDB(env.iutics, env.CACHE, group);
 		return new Response(ics, { headers: { 'Content-Type': 'text/calendar' } });
 	}
 } satisfies ExportedHandler<Env>;

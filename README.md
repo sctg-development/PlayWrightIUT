@@ -53,38 +53,48 @@ The application implements a sophisticated caching strategy to minimize costs as
   - `start`/`end`: Event timestamps
   - `summary`/`description`: Event details
 - **Cloudflare KV**: Stores cache metadata:
-  - Last fetch timestamps per group
-  - Group statistics
-  - Known groups list
+  - Last fetch timestamps per group (`last_${group}`)
+  - Group statistics (`${group}_stats`)
+  - Known groups list (`known_groups`)
+  - **Generated ICS strings** (`${group}_ics`) - Cached final calendar output
 
 **Cache Logic Flow**:
 1. **Cache Check**: When a request arrives for `/iutrt-bethune?group=X`:
    - Retrieve `last_X` timestamp from KV
    - Calculate if 12+ hours have passed since last fetch
 
-2. **Cache Hit**: If cache is still valid (< 12 hours old):
-   - Skip browser rendering entirely
-   - Generate ICS directly from D1 database
-   - Return cached calendar data
+2. **ICS Cache Check**: If data cache is valid:
+   - Check for cached ICS string in `${group}_ics`
+   - If found, return cached ICS immediately (avoids D1 query)
 
-3. **Cache Miss**: If cache is stale (≥ 12 hours old):
+3. **Cache Hit**: If cache is still valid (< 12 hours old) but no ICS cache:
+   - Skip browser rendering entirely
+   - Query D1 database for events
+   - Generate ICS string and cache it in KV
+   - Return calendar data
+
+4. **Cache Miss**: If cache is stale (≥ 12 hours old):
    - Launch Cloudflare Browser Rendering (Playwright)
    - Navigate to ADE system and export fresh ICS
    - Parse ICS content and store events in D1
+   - **Invalidate cached ICS** to ensure fresh generation
    - Update `last_X` timestamp in KV
-   - Generate and return new calendar data
+   - Generate and cache new ICS string
+   - Return new calendar data
 
 ### Cost Optimization Benefits
 
 - **Browser Rendering Usage**: Only triggered when cache expires (every 12 hours per group)
+- **Database Query Optimization**: ICS strings are cached in KV, reducing D1 read operations for repeated requests
 - **Free Tier Utilization**: With typical usage patterns, stays well within 10 minutes/day free limit
 - **Scalability**: Multiple groups can share the same infrastructure without multiplicative costs
-- **Performance**: Cached responses serve near-instantaneously from database
+- **Performance**: Cached responses serve near-instantaneously from KV storage
 
 ### Cache Invalidation Strategy
 
 - **Time-based**: Automatic expiration after 12 hours
 - **Group-specific**: Each group maintains independent cache validity
+- **Multi-level**: Invalidates both data cache and generated ICS cache when updating
 - **Error-resilient**: Cache misses don't break functionality (fallback to fresh fetch)
 
 ## Setup

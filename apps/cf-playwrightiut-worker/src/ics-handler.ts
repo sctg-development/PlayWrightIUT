@@ -34,6 +34,11 @@ import ical from 'ical';
  */
 export async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group: string, icsContent: string, startDate: string, endDate: string): Promise<void> {
     console.log(`[CACHE] Starting to parse and store ICS for group ${group}, content length: ${icsContent.length}`);
+
+    // Invalidate cached ICS immediately since we're about to update the data
+    await cache.delete(`${group}_ics`);
+    console.log(`[CACHE] Invalidated cached ICS for group ${group} before update`);
+
     const data = ical.parseICS(icsContent);
     const events = Object.values(data).filter((item: any) => item.type === 'VEVENT');
     console.log(`[CACHE] Found ${events.length} events in ICS content`);
@@ -97,11 +102,22 @@ export async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group
 
 /**
  * Generates an ICS calendar string from events stored in the database for a specific group
+ * Uses KV cache to avoid regenerating the same ICS multiple times
  * @param db - The D1 database instance
+ * @param cache - The KV namespace for caching
  * @param group - The group identifier
  * @returns Promise that resolves to the ICS calendar content as a string
  */
-export async function generateICSFromDB(db: D1Database, group: string): Promise<string> {
+export async function generateICSFromDB(db: D1Database, cache: KVNamespace, group: string): Promise<string> {
+    // Check if we have a cached ICS for this group
+    const cachedICS = await cache.get(`${group}_ics`);
+    if (cachedICS) {
+        console.log(`[CACHE] Returning cached ICS for group ${group}`);
+        return cachedICS;
+    }
+
+    // Generate ICS from database
+    console.log(`[CACHE] Generating fresh ICS for group ${group}`);
     const { results } = await db.prepare('SELECT * FROM events WHERE grp = ?').bind(group).all();
     let ics = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//IUT ICS//EN\n';
     for (const event of results) {
@@ -115,5 +131,10 @@ export async function generateICSFromDB(db: D1Database, group: string): Promise<
         ics += 'END:VEVENT\n';
     }
     ics += 'END:VCALENDAR\n';
+
+    // Cache the generated ICS
+    await cache.put(`${group}_ics`, ics);
+    console.log(`[CACHE] Cached fresh ICS for group ${group}`);
+
     return ics;
 }
