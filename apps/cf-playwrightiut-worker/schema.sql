@@ -5,5 +5,6 @@ CREATE TABLE events (
 	end TEXT NOT NULL,
 	summary TEXT,
 	description TEXT,
+	location TEXT,
 	PRIMARY KEY (grp, uid)
 );

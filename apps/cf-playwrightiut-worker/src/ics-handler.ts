@@ -136,8 +136,8 @@ export async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group
         try {
             if (event.start && event.end) {
                 console.log(`[CACHE] Inserting event: ${event.summary} (${event.start.toISOString()} - ${event.end.toISOString()})`);
-                await db.prepare('INSERT INTO events (grp, uid, start, end, summary, description) VALUES (?, ?, ?, ?, ?, ?)')
-                    .bind(group, event.uid, event.start.toISOString(), event.end.toISOString(), event.summary, event.description)
+                await db.prepare('INSERT INTO events (grp, uid, start, end, summary, description, location) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                    .bind(group, event.uid, event.start.toISOString(), event.end.toISOString(), event.summary, event.description, event.location ?? '')
                     .run();
                 insertedCount++;
             } else {
@@ -217,6 +217,13 @@ export async function generateICSFromDB(db: D1Database, cache: KVNamespace, grou
             const descEsc = escapeTextForICS(descSan);
             if (descEsc) {
                 ics += foldICSLines(`DESCRIPTION:${descEsc}`) + EOL;
+            }
+        }
+        // Include LOCATION if present.
+        if (e.location) {
+            const locEsc = escapeTextForICS(String(e.location));
+            if (locEsc) {
+                ics += foldICSLines(`LOCATION:${locEsc}`) + EOL;
             }
         }
         ics += `END:VEVENT${EOL}`;
