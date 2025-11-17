@@ -58,6 +58,13 @@ The application implements a sophisticated caching strategy to minimize costs as
   - Known groups list (`known_groups`)
   - **Generated ICS strings** (`${group}_ics`) - Cached final calendar output
 
+**Text formatting**:
+- The worker normalizes event text (summary and description) for ICS compatibility with calendar clients (Apple Calendar, Google Calendar) by:
+   - trimming leading/trailing blank lines in descriptions
+   - escaping newlines as `\n` in the `DESCRIPTION` property
+   - escaping commas, semicolons and backslashes
+   - using CRLF (`\r\n`) as the file line separator to remain RFC-compliant
+
 **Cache Logic Flow**:
 1. **Cache Check**: When a request arrives for `/iutrt-bethune?group=X`:
    - Retrieve `last_X` timestamp from KV

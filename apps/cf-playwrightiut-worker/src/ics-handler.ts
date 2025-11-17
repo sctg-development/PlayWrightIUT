@@ -22,6 +22,35 @@
 
 import ical from 'ical';
 
+// Helper: normalize and escape text for ICS (RFC 5545)
+function escapeTextForICS(text: string | undefined | null): string {
+    if (!text) return '';
+    // Normalize line endings to LF, then trim leading/trailing blank lines
+    let s = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    s = s.replace(/^\s*\n+/, '');
+    s = s.replace(/\n+\s*$/, '');
+    // Escape backslashes first
+    s = s.replace(/\\/g, '\\\\');
+    // Escape special characters
+    s = s.replace(/;/g, '\\;').replace(/,/g, '\\,');
+    // Replace actual newlines with literal \n (two characters) for ICS text
+    s = s.replace(/\n/g, '\\n');
+    return s;
+}
+
+// Helper: fold long ICS property lines at 75 octets (approx chars here)
+function foldICSLines(line: string, limit = 75): string {
+    if (!line) return line;
+    let res = '';
+    let remaining = line;
+    while (remaining.length > limit) {
+        res += remaining.slice(0, limit) + '\r\n' + ' ';
+        remaining = remaining.slice(limit);
+    }
+    res += remaining;
+    return res;
+}
+
 /**
  * Parses ICS content and stores events in the database for a specific group
  * @param db - The D1 database instance
@@ -119,18 +148,29 @@ export async function generateICSFromDB(db: D1Database, cache: KVNamespace, grou
     // Generate ICS from database
     console.log(`[CACHE] Generating fresh ICS for group ${group}`);
     const { results } = await db.prepare('SELECT * FROM events WHERE grp = ?').bind(group).all();
-    let ics = 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//IUT ICS//EN\n';
+    const EOL = '\r\n';
+    let ics = `BEGIN:VCALENDAR${EOL}VERSION:2.0${EOL}PRODID:-//IUT ICS//EN${EOL}`;
     for (const event of results) {
         const e = event as any;
-        ics += 'BEGIN:VEVENT\n';
-        ics += `UID:${e.uid}\n`;
-        ics += `DTSTART:${new Date(e.start).toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n`;
-        ics += `DTEND:${new Date(e.end).toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n`;
-        ics += `SUMMARY:${e.summary}\n`;
-        if (e.description) ics += `DESCRIPTION:${e.description}\n`;
-        ics += 'END:VEVENT\n';
+        ics += `BEGIN:VEVENT${EOL}`;
+        ics += `UID:${String(e.uid ?? '')}${EOL}`;
+        ics += `DTSTART:${new Date(e.start).toISOString().replace(/[-:]/g, '').split('.')[0]}Z${EOL}`;
+        ics += `DTEND:${new Date(e.end).toISOString().replace(/[-:]/g, '').split('.')[0]}Z${EOL}`;
+        // Escape summary and fold lines
+        const summaryEsc = escapeTextForICS(String(e.summary ?? ''));
+        if (summaryEsc) {
+            ics += foldICSLines(`SUMMARY:${summaryEsc}`) + EOL;
+        }
+        // Escape description and fold lines (convert internal newlines to literal \n)
+        if (e.description) {
+            const descEsc = escapeTextForICS(String(e.description));
+            if (descEsc) {
+                ics += foldICSLines(`DESCRIPTION:${descEsc}`) + EOL;
+            }
+        }
+        ics += `END:VEVENT${EOL}`;
     }
-    ics += 'END:VCALENDAR\n';
+    ics += `END:VCALENDAR${EOL}`;
 
     // Cache the generated ICS
     await cache.put(`${group}_ics`, ics);
