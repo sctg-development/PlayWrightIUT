@@ -22,7 +22,16 @@
 
 import ical from 'ical';
 
-// Helper: normalize and escape text for ICS (RFC 5545)
+/**
+ * Normalize and escape a text value for inclusion in an ICS property (RFC 5545).
+ *
+ * - Normalizes line endings to LF, trims leading/trailing blank lines,
+ * - Escapes backslashes, commas, and semicolons,
+ * - Converts internal newlines to a literal "\\n" sequence (so clients render line breaks),
+ *
+ * @param text - The raw text to escape (may be undefined or null)
+ * @returns A sanitized string safe for inclusion in an ICS property value
+ */
 function escapeTextForICS(text: string | undefined | null): string {
     if (!text) return '';
     // Normalize line endings to LF, then trim leading/trailing blank lines
@@ -38,7 +47,14 @@ function escapeTextForICS(text: string | undefined | null): string {
     return s;
 }
 
-// Helper: sanitize description to remove unwanted strings like "A Attester" and "(Exporté le:... )"
+/**
+ * Sanitize a description string to remove unwanted content often added to ADE exports.
+ * This function performs lightweight normalization and filters out specific patterns
+ * such as "A Attester" lines and "(Exporté le:... )" footer lines.
+ *
+ * @param text - The raw description text (may be undefined or null)
+ * @returns The sanitized description string (LF line endings) ready for further escaping
+ */
 function sanitizeDescriptionForICS(text: string | undefined | null): string {
     if (!text) return '';
     let s = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -53,7 +69,16 @@ function sanitizeDescriptionForICS(text: string | undefined | null): string {
     return s;
 }
 
-// Helper: fold long ICS property lines at 75 octets (approx chars here)
+/**
+ * Fold long ICS property lines according to the 75-octet recommendation from the ICS specification.
+ * This helper performs a coarse character-based split and inserts the CRLF + space sequence
+ * that indicates a folded line. Note: for full RFC compliance you should fold on octets, not
+ * characters; this implementation is sufficient for typical Latin text.
+ *
+ * @param line - The property line to fold (for example, "DESCRIPTION:..." or "SUMMARY:...")
+ * @param limit - Approximate number of characters before a fold (default: 75)
+ * @returns The folded string using CRLF + leading space on wrapped lines
+ */
 function foldICSLines(line: string, limit = 75): string {
     if (!line) return line;
     let res = '';
@@ -67,14 +92,18 @@ function foldICSLines(line: string, limit = 75): string {
 }
 
 /**
- * Parses ICS content and stores events in the database for a specific group
- * @param db - The D1 database instance
- * @param cache - cache - The KV namespace for caching
- * @param group - The group identifier
- * @param icsContent - The raw ICS calendar content
- * @param startDate - Start date in DD/MM/YYYY format
- * @param endDate - End date in DD/MM/YYYY format
- * @returns Promise that resolves when all events are stored
+ * Parse an ICS calendar string and store the resulting VEVENT items in the D1 database
+ * for a specific group.
+ *
+ * The function invalidates the per-group ICS KV cache at the start of the process to ensure
+ * that subsequent requests won't return stale calendars while import is in progress.
+ *
+ * @param db - D1 database instance
+ * @param cache - KV namespace used for caching (used to invalidate `group_ics` and store stats)
+ * @param group - Group identifier (eg. 'RT1_A1')
+ * @param icsContent - Raw ICS string to parse
+ * @param startDate - Import range start date in DD/MM/YYYY format
+ * @param endDate - Import range end date in DD/MM/YYYY format
  */
 export async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group: string, icsContent: string, startDate: string, endDate: string): Promise<void> {
     console.log(`[CACHE] Starting to parse and store ICS for group ${group}, content length: ${icsContent.length}`);
@@ -145,12 +174,17 @@ export async function parseAndStoreICS(db: D1Database, cache: KVNamespace, group
 }
 
 /**
- * Generates an ICS calendar string from events stored in the database for a specific group
- * Uses KV cache to avoid regenerating the same ICS multiple times
- * @param db - The D1 database instance
- * @param cache - The KV namespace for caching
- * @param group - The group identifier
- * @returns Promise that resolves to the ICS calendar content as a string
+ * Generate an ICS calendar string from all events stored in the D1 database for a group.
+ *
+ * This function first checks a per-group ICS cache in KV (`${group}_ics`) and returns that
+ * cached string if present. If no cached ICS exists, it queries the D1 database, builds the
+ * ICS output with CRLF line endings, escapes and folds SUMMARY/DESCRIPTION, then caches
+ * the resulting string in KV for subsequent requests.
+ *
+ * @param db - D1 database instance
+ * @param cache - KV namespace used for caching generated ICS strings
+ * @param group - Group identifier (eg. 'RT1_A1')
+ * @returns A Promise that resolves with an ICS string ready to be served
  */
 export async function generateICSFromDB(db: D1Database, cache: KVNamespace, group: string): Promise<string> {
     // Check if we have a cached ICS for this group
