@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 # =============================================================================
-# Secure Restore Script for Sensitive Data
+# Secure Restore Script for Sensitive Data version 2.6
 # =============================================================================
 #
 # This script decrypts and displays the contents of an encrypted backup archive
@@ -34,7 +34,9 @@
 # 3. Decrypts the AES-256-CBC encrypted archive
 # 4. Verifies archive integrity using SHA256 hash
 # 5. Lists the contents of the decrypted archive
-# 6. Provides manual restoration instructions
+# 6. Automatically restores SSH/GPG keys if present and not already on system
+# 7. Configures Git local settings to use the restored keys
+# 8. Provides manual restoration instructions
 #
 # Requirements:
 # - PROJECT_ROOT environment variable must be set
@@ -48,7 +50,7 @@
 #   export CRYPTOKEN="your-encryption-key"  # Only if backup was encrypted
 #   ./restore_sensitive_datas
 #
-# Note: This script only decrypts and shows contents. Manual restoration required.
+# Note: This script decrypts, shows contents, automatically restores keys, configures Git, and provides manual restoration instructions for other files.
 # =============================================================================
 
 # Configuration Section
@@ -66,6 +68,15 @@ PBKDF2_ITERATIONS=100000
 # =============================================================================
 # Main Script Logic
 # =============================================================================
+
+# .env file is located one level from this script
+# load it
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/../.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/../.env"
+    set +a
+fi
 
 # Step 1: Validate PROJECT_ROOT
 # -----------------------------
@@ -119,7 +130,7 @@ else
 fi
 
 # Perform the decryption
-openssl enc -${CIPHER_ALGO} -d -pbkdf2 -iter ${PBKDF2_ITERATIONS} $DECRYPT \
+openssl enc -${CIPHER_ALGO} -a -d -pbkdf2 -iter ${PBKDF2_ITERATIONS} $DECRYPT \
     -in $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz.enc \
     -out $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz
 
@@ -160,7 +171,87 @@ echo "✓ Decryption successful! Archive contents:"
 echo "=================================================================================="
 tar -tvJf $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz
 
-# Step 6: Provide restoration instructions
+# Step 6: Automatically restore keys if present and not already on system
+# -------------------------------------------------------------------------
+echo ""
+echo "=================================================================================="
+echo "AUTOMATIC KEY RESTORATION"
+echo "=================================================================================="
+
+# Restore SSH keys
+if tar -tf $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz | grep -q "ssh_key_filename.txt"; then
+    SSH_KEY_FILENAME=$(tar -xJf $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz -O "_sensitive_datas/ssh_key_filename.txt" 2>/dev/null)
+    if [ -n "$SSH_KEY_FILENAME" ]; then
+        TARGET_KEY="$HOME/.ssh/$SSH_KEY_FILENAME"
+        if [ ! -f "$TARGET_KEY" ]; then
+            echo "Restoring SSH key: $SSH_KEY_FILENAME"
+            mkdir -p "$HOME/.ssh"
+            # Extract to temp dir first
+            mkdir -p /tmp/restore_ssh
+            tar -xJf $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz -C /tmp/restore_ssh "_sensitive_datas/ssh_private.key" "_sensitive_datas/ssh_public.key"
+            mv /tmp/restore_ssh/_sensitive_datas/ssh_private.key "$TARGET_KEY"
+            mv /tmp/restore_ssh/_sensitive_datas/ssh_public.key "${TARGET_KEY}.pub"
+            rm -rf /tmp/restore_ssh
+            chmod 600 "$TARGET_KEY"
+            chmod 644 "${TARGET_KEY}.pub"
+            echo "✓ SSH key restored successfully as $SSH_KEY_FILENAME"
+        else
+            echo "✓ SSH key $SSH_KEY_FILENAME already exists, skipping restore"
+        fi
+    fi
+else
+    echo "✓ No SSH keys found in backup"
+fi
+
+# Restore GPG keys
+if tar -tf $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz | grep -q "gpg_key_id.txt"; then
+    GPG_KEY_ID=$(tar -xJf $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz -O "_sensitive_datas/gpg_key_id.txt" 2>/dev/null)
+    if [ -n "$GPG_KEY_ID" ] && ! gpg --list-keys "$GPG_KEY_ID" >/dev/null 2>&1; then
+        echo "Restoring GPG key: $GPG_KEY_ID"
+        mkdir -p /tmp/restore_gpg
+        tar -xJf $PROJECT_ROOT/_sensitive_datas/_sensitive_datas.tar.xz -C /tmp/restore_gpg "_sensitive_datas/gpg_public.key" "_sensitive_datas/gpg_private.key"
+        gpg --import /tmp/restore_gpg/_sensitive_datas/gpg_public.key
+        gpg --import /tmp/restore_gpg/_sensitive_datas/gpg_private.key
+        rm -rf /tmp/restore_gpg
+        echo "✓ GPG key restored successfully"
+    else
+        echo "✓ GPG key $GPG_KEY_ID already exists or not found in backup, skipping restore"
+    fi
+else
+    echo "✓ No GPG keys found in backup"
+fi
+
+# Configure Git with restored keys
+echo "Configuring Git with restored keys..."
+cd "$PROJECT_ROOT"  # Ensure we're in the git repository
+
+# Configure SSH for Git
+if [ -n "$SSH_KEY_FILENAME" ] && [ -f "$HOME/.ssh/$SSH_KEY_FILENAME" ]; then
+    CURRENT_SSH_CMD=$(git config --local core.sshCommand 2>/dev/null)
+    DESIRED_SSH_CMD="ssh -i $HOME/.ssh/$SSH_KEY_FILENAME -o IdentitiesOnly=yes"
+    if [ "$CURRENT_SSH_CMD" != "$DESIRED_SSH_CMD" ]; then
+        git config --local core.sshCommand "$DESIRED_SSH_CMD"
+        echo "✓ Configured Git SSH command: $DESIRED_SSH_CMD"
+    else
+        echo "✓ Git SSH command already correctly configured"
+    fi
+fi
+
+# Configure GPG for Git
+if [ -n "$GPG_KEY_ID" ] && gpg --list-keys "$GPG_KEY_ID" >/dev/null 2>&1; then
+    CURRENT_GPG_KEY=$(git config --local user.signingkey 2>/dev/null)
+    if [ "$CURRENT_GPG_KEY" != "$GPG_KEY_ID" ]; then
+        git config --local user.signingkey "$GPG_KEY_ID"
+        git config --local commit.gpgsign true
+        echo "✓ Configured Git GPG signing key: $GPG_KEY_ID"
+    else
+        echo "✓ Git GPG signing key already correctly configured"
+    fi
+fi
+
+echo "=================================================================================="
+
+# Step 7: Provide restoration instructions
 # ----------------------------------------
 echo ""
 echo "=================================================================================="

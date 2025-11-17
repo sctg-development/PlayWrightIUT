@@ -21,11 +21,13 @@
 # SOFTWARE.
 
 # =============================================================================
-# Secure Backup Script for Sensitive Data
+# Secure Backup Script for Sensitive Data version 2.6
 # =============================================================================
 #
 # This script creates an encrypted backup of sensitive project files including:
 # - Environment variables (.env files)
+# - SSH keys (if BACKUP_SSH=1 or true)
+# - GPG keys (if BACKUP_GPG=1 or true)
 # - Cloudflare Worker configuration (.wrangler)
 # - VS Code settings and launch configurations
 # - Launch scripts
@@ -67,6 +69,86 @@ FILES_TO_BACKUP=(
     "client/.vscode/settings.json"                   # Client VS Code settings
     "./launch-*"                                     # All launch scripts
 )
+
+# .env file is located one level from this script
+# load it
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/../.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/../.env"
+    set +a
+fi
+
+# Determine SSH key to backup
+if [ "${BACKUP_SSH}" = "1" ] || [ "${BACKUP_SSH}" = "true" ]; then
+    SSH_CMD=$(git config --local core.sshCommand 2>/dev/null)
+    if [ -z "$SSH_CMD" ]; then
+        SSH_CMD=$(git config --global core.sshCommand 2>/dev/null)
+    fi
+    if [ -n "$SSH_CMD" ]; then
+        SSH_KEY_PATH=$(echo "$SSH_CMD" | sed -n 's/.*-i \([^ ]*\).*/\1/p')
+        if [ -n "$SSH_KEY_PATH" ] && [ -f "$SSH_KEY_PATH" ] && [ -f "${SSH_KEY_PATH}.pub" ]; then
+            # Copy SSH keys to _sensitive_datas for security
+            cp "$SSH_KEY_PATH" _sensitive_datas/ssh_private.key
+            cp "${SSH_KEY_PATH}.pub" _sensitive_datas/ssh_public.key
+            # Save original path for restoration
+            SSH_KEY_FILENAME=$(basename "$SSH_KEY_PATH")
+            echo "$SSH_KEY_FILENAME" > _sensitive_datas/ssh_key_filename.txt
+            FILES_TO_BACKUP+=("_sensitive_datas/ssh_private.key" "_sensitive_datas/ssh_public.key" "_sensitive_datas/ssh_key_filename.txt")
+            echo "✓ SSH key configured for backup: $SSH_KEY_PATH"
+        else
+            echo "⚠️  SSH key path not found or invalid: $SSH_KEY_PATH"
+        fi
+    else
+        echo "⚠️  No SSH command configured in git config"
+        echo "🔍 Detecting SSH key used by repository..."
+        
+        # Try to detect which SSH key is used by testing connection to GitHub
+        SSH_KEY_INFO=$(ssh -v -T git@github.com 2>&1 | grep "Offering public key" | head -1)
+        if [ -n "$SSH_KEY_INFO" ]; then
+            SSH_KEY_PATH=$(echo "$SSH_KEY_INFO" | sed -n 's/.*Offering public key: \([^ ]*\).*/\1/p')
+            if [ -n "$SSH_KEY_PATH" ] && [ -f "$SSH_KEY_PATH" ] && [ -f "${SSH_KEY_PATH}.pub" ]; then
+                # Copy SSH keys to _sensitive_datas for security
+                cp "$SSH_KEY_PATH" _sensitive_datas/ssh_private.key
+                cp "${SSH_KEY_PATH}.pub" _sensitive_datas/ssh_public.key
+                # Save original path for restoration
+                SSH_KEY_FILENAME=$(basename "$SSH_KEY_PATH")
+                echo "$SSH_KEY_FILENAME" > _sensitive_datas/ssh_key_filename.txt
+                FILES_TO_BACKUP+=("_sensitive_datas/ssh_private.key" "_sensitive_datas/ssh_public.key" "_sensitive_datas/ssh_key_filename.txt")
+                echo "✓ SSH key auto-detected and configured for backup: $SSH_KEY_PATH"
+            else
+                echo "⚠️  Auto-detected SSH key path not found or invalid: $SSH_KEY_PATH"
+            fi
+        else
+            echo "⚠️  Could not auto-detect SSH key used by repository"
+        fi
+    fi
+fi
+
+# Determine GPG key to backup
+if [ "${BACKUP_GPG}" = "1" ] || [ "${BACKUP_GPG}" = "true" ]; then
+    GPG_KEY_ID=$(git config --local user.signingkey 2>/dev/null)
+    if [ -z "$GPG_KEY_ID" ]; then
+        GPG_KEY_ID=$(git config --global user.signingkey 2>/dev/null)
+    fi
+    if [ -n "$GPG_KEY_ID" ]; then
+        # Export public key
+        gpg --export $GPG_KEY_ID > _sensitive_datas/gpg_public.key 2>/dev/null
+        # Export private key
+        gpg --export-secret-keys $GPG_KEY_ID > _sensitive_datas/gpg_private.key 2>/dev/null
+        if [ -s "_sensitive_datas/gpg_public.key" ] && [ -s "_sensitive_datas/gpg_private.key" ]; then
+            FILES_TO_BACKUP+=("_sensitive_datas/gpg_public.key" "_sensitive_datas/gpg_private.key")
+            echo "$GPG_KEY_ID" > _sensitive_datas/gpg_key_id.txt
+            FILES_TO_BACKUP+=("_sensitive_datas/gpg_key_id.txt")
+            echo "✓ GPG key configured for backup: $GPG_KEY_ID"
+        else
+            echo "⚠️  Failed to export GPG key: $GPG_KEY_ID"
+            rm -f _sensitive_datas/gpg_*.key _sensitive_datas/gpg_key_id.txt
+        fi
+    else
+        echo "⚠️  No GPG signing key configured in git config"
+    fi
+fi
 
 # Encryption configuration
 # AES-256-CBC with PBKDF2 provides strong encryption with key derivation
@@ -135,10 +217,24 @@ else
     echo "✓ Archive exclusion already present in .gitignore"
 fi
 
+# Ensure .gitignore excludes GPG key files
+if ! grep -q "^gpg_.*\.key$" "$GITIGNORE_FILE"; then
+    echo "Adding GPG key files exclusion to existing .gitignore..."
+    echo "gpg_*.key" >> "$GITIGNORE_FILE"
+    echo "✓ Updated $GITIGNORE_FILE with GPG key exclusion rules"
+fi
+
+# Ensure .gitignore excludes SSH key files
+if ! grep -q "^ssh_.*\.key$" "$GITIGNORE_FILE"; then
+    echo "Adding SSH key files exclusion to existing .gitignore..."
+    echo "ssh_*.key" >> "$GITIGNORE_FILE"
+    echo "✓ Updated $GITIGNORE_FILE with SSH key exclusion rules"
+fi
+
 # Step 5: Encrypt the archive
 # ---------------------------
 echo "Encrypting archive with ${CIPHER_ALGO}..."
-openssl enc -${CIPHER_ALGO} -pbkdf2 -iter ${PBKDF2_ITERATIONS} -salt -pass pass:"$CRYPTOKEN" \
+openssl enc -${CIPHER_ALGO} -a -pbkdf2 -iter ${PBKDF2_ITERATIONS} -salt -pass pass:"$CRYPTOKEN" \
     -in _sensitive_datas/_sensitive_datas.tar.xz \
     -out _sensitive_datas/_sensitive_datas.tar.xz.enc
 
@@ -158,4 +254,13 @@ rm _sensitive_datas/_sensitive_datas.tar.xz
 # -------------------
 echo "✓ Backup completed successfully!"
 echo "Encrypted backup saved as: _sensitive_datas/_sensitive_datas.tar.xz.enc"
-echo "Algorithm used: ${CIPHER_ALGO} with PBKDF2 (${PBKDF2_ITERATIONS} iterations)"
+echo "Algorithm used: ${CIPHER_ALGO} with PBKDF2 (${PBKDF2_ITERATIONS} iterations and Passowrd=$CRYPTOKEN)"
+
+# Clean up GPG key files for security
+echo "Removing temporary GPG key files for security..."
+rm -f _sensitive_datas/gpg_*.key _sensitive_datas/gpg_key_id.txt
+
+# Clean up SSH key files for security
+echo "Removing temporary SSH key files for security..."
+rm -f _sensitive_datas/ssh_*.key
+rm -f _sensitive_datas/ssh_key_filename.txt
