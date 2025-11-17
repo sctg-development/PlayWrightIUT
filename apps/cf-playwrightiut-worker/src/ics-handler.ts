@@ -38,6 +38,21 @@ function escapeTextForICS(text: string | undefined | null): string {
     return s;
 }
 
+// Helper: sanitize description to remove unwanted strings like "A Attester" and "(Exporté le:... )"
+function sanitizeDescriptionForICS(text: string | undefined | null): string {
+    if (!text) return '';
+    let s = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    // Remove occurrences of 'A Attester' on their own line
+    s = s.replace(/(^|\n)\s*A Attester\s*(\n|$)/g, '\n');
+    // Remove '(Exporté le:... )' or 'Exporté le:...' even if not enclosed in parentheses
+    s = s.replace(/\(?Exporté le:[^)]*\)?\s*(\n|$)/g, '');
+    // Collapse multiple newlines to a single newline
+    s = s.replace(/\n{2,}/g, '\n');
+    // Trim leading/trailing whitespace/newlines
+    s = s.replace(/^\s+|\s+$/g, '');
+    return s;
+}
+
 // Helper: fold long ICS property lines at 75 octets (approx chars here)
 function foldICSLines(line: string, limit = 75): string {
     if (!line) return line;
@@ -163,7 +178,9 @@ export async function generateICSFromDB(db: D1Database, cache: KVNamespace, grou
         }
         // Escape description and fold lines (convert internal newlines to literal \n)
         if (e.description) {
-            const descEsc = escapeTextForICS(String(e.description));
+            // Sanitize and then escape description
+            const descSan = sanitizeDescriptionForICS(String(e.description));
+            const descEsc = escapeTextForICS(descSan);
             if (descEsc) {
                 ics += foldICSLines(`DESCRIPTION:${descEsc}`) + EOL;
             }
